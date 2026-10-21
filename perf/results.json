@@ -1,0 +1,1593 @@
+{
+  "protocol": "perf/run_allocations.py defaults; one comparison per revision; HTTP/1.1 loopback",
+  "allocationMetric": "ThreadMXBean heap allocation deltas on surviving platform threads, excluding measurement-control thread",
+  "limits": [
+    "One short comparison is evidence for these workloads, not a stable production percentage or capacity claim.",
+    "New surviving threads count from zero; terminated threads may be missed, including threads born and terminated between snapshots.",
+    "Counters include application, framework and recording overhead; they exclude direct/native memory and retained-heap/RSS measurements.",
+    "JFR sample counts identify stacks, not exact object counts. All byte arrays under initialize share a stack group; it does not identify their sizes.",
+    "Warmup records first-touch heap-array events separately; an absent event does not prove global absence of large arrays.",
+    "Local Python fixture timings are diagnostics; JFR and the fixture affect results."
+  ],
+  "baseline": {
+    "label": "baseline",
+    "jarSha256": "252ef09d9282c298063fd90001bfd1dfd4d46719ad152fae10cd5f652e6f0ab9",
+    "javaVersion": "openjdk version \"21.0.12.1\" 2026-08-18 LTS\nOpenJDK Runtime Environment Temurin-21.0.12.1+1 (build 21.0.12.1+1-LTS)\nOpenJDK 64-Bit Server VM Temurin-21.0.12.1+1 (build 21.0.12.1+1-LTS, mixed mode, sharing)",
+    "workers": 4,
+    "bodyBytes": 1048576,
+    "tinyBodyBytes": 65536,
+    "heapBytes": 268435456,
+    "allocatorWarmup": {
+      "g1RegionBytes": 1048576,
+      "largeByteArrayOutsideTlabEvents": [
+        {
+          "nettyHeapArena": true,
+          "allocatedBytes": 4194320,
+          "applicationFrame": "dev.example.proxy.transport.ProxyExchange.pumpUpload"
+        },
+        {
+          "nettyHeapArena": true,
+          "allocatedBytes": 4194320,
+          "applicationFrame": "dev.example.proxy.transport.ProxyExchange.pumpUpload"
+        }
+      ]
+    },
+    "phases": {
+      "head": {
+        "requests": 5000,
+        "allocatedBytesSurvivingThreads": 152962736,
+        "allocatedBytesPerRequestSurvivingThreads": 30592.5472,
+        "newThreads": 1,
+        "disappearedThreads": 0,
+        "durationNanos": 1628102831,
+        "elapsedNanos": 1629661306,
+        "localRequestsPerSecond": 3071.059090861565,
+        "localP99Millis": 4.012386,
+        "g1RegionBytes": 1048576,
+        "jfrEvidence": {
+          "gcCount": 1,
+          "gcPauseNanos": 5625385,
+          "largeByteArrayOutsideTlabEvents": [],
+          "allocationSites": [
+            {
+              "site": "INITIALIZE_BYTE_ARRAYS",
+              "samples": 163
+            },
+            {
+              "site": "[B at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 161
+            },
+            {
+              "site": "[Lorg.eclipse.jetty.http.HttpField; at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 4
+            },
+            {
+              "site": "java.util.TreeMap$Entry at dev.example.proxy.transport.ProxyExchange.lambda$headerMap$13",
+              "samples": 3
+            },
+            {
+              "site": "java.util.LinkedHashMap at dev.example.proxy.api.Headers.<init>",
+              "samples": 9
+            },
+            {
+              "site": "org.eclipse.jetty.util.Callback$4 at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 4
+            },
+            {
+              "site": "org.eclipse.jetty.http.HttpField at dev.example.proxy.transport.ProxyExchange.lambda$received$10",
+              "samples": 3
+            },
+            {
+              "site": "io.netty.handler.codec.DefaultHeaders$HeaderEntry at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 3
+            },
+            {
+              "site": "io.netty.util.concurrent.DefaultPromise at dev.example.proxy.transport.ProxyExchange.acquire",
+              "samples": 3
+            },
+            {
+              "site": "java.nio.HeapByteBufferR at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 3
+            },
+            {
+              "site": "java.util.TreeMap at dev.example.proxy.transport.ProxyExchange.headerMap",
+              "samples": 3
+            },
+            {
+              "site": "[Ljava.util.HashMap$Node; at dev.example.proxy.api.Headers.add",
+              "samples": 5
+            },
+            {
+              "site": "java.util.LinkedHashMap$Entry at dev.example.proxy.api.Headers.add",
+              "samples": 5
+            },
+            {
+              "site": "io.netty.util.concurrent.ScheduledFutureTask at dev.example.proxy.transport.NettyTransport$1.channelReleased",
+              "samples": 3
+            },
+            {
+              "site": "[B at dev.example.proxy.core.UpstreamUri.resolve",
+              "samples": 5
+            },
+            {
+              "site": "java.lang.String at dev.example.proxy.api.Headers.normalizeName",
+              "samples": 6
+            },
+            {
+              "site": "io.netty.util.concurrent.DefaultPromise at dev.example.proxy.transport.ProxyExchange.releaseChannel",
+              "samples": 2
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange$$Lambda.0x00007f77d45f4cb8 at dev.example.proxy.transport.ProxyExchange.lambda$received$11",
+              "samples": 2
+            },
+            {
+              "site": "java.util.LinkedHashMap at dev.example.proxy.api.Headers.asMap",
+              "samples": 6
+            },
+            {
+              "site": "java.lang.String at dev.example.proxy.core.UpstreamUri.requestTarget",
+              "samples": 2
+            },
+            {
+              "site": "io.netty.util.concurrent.ScheduledFutureTask at dev.example.proxy.transport.ProxyExchange.awaitResponseHeaders",
+              "samples": 2
+            },
+            {
+              "site": "io.netty.channel.DefaultChannelPromise at dev.example.proxy.transport.ProxyExchange.endUpload",
+              "samples": 2
+            },
+            {
+              "site": "[B at dev.example.proxy.transport.ProxyExchange.lambda$headerMap$13",
+              "samples": 2
+            },
+            {
+              "site": "[Ljava.nio.ByteBuffer; at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 2
+            },
+            {
+              "site": "java.util.concurrent.CompletableFuture$UniRelay at dev.example.resilience.CommandExecutor$Execution.<init>",
+              "samples": 4
+            },
+            {
+              "site": "[Ljava.util.HashMap$Node; at dev.example.proxy.api.Headers.lambda$asMap$4",
+              "samples": 2
+            },
+            {
+              "site": "java.util.Collections$UnmodifiableMap at dev.example.proxy.api.Headers.asMap",
+              "samples": 2
+            },
+            {
+              "site": "org.eclipse.jetty.util.Callback$4 at dev.example.proxy.transport.ProxyExchange.terminate",
+              "samples": 2
+            },
+            {
+              "site": "dev.example.proxy.core.Origin at dev.example.proxy.core.Origin.from",
+              "samples": 2
+            },
+            {
+              "site": "org.eclipse.jetty.ee11.servlet.AsyncContextEvent at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 4
+            }
+          ]
+        }
+      },
+      "upload": {
+        "requests": 1024,
+        "allocatedBytesSurvivingThreads": 80856688,
+        "allocatedBytesPerRequestSurvivingThreads": 78961.609375,
+        "newThreads": 0,
+        "disappearedThreads": 0,
+        "durationNanos": 1010146788,
+        "elapsedNanos": 1011103567,
+        "localRequestsPerSecond": 1013.7140583572295,
+        "localP99Millis": 13.116581,
+        "g1RegionBytes": 1048576,
+        "jfrEvidence": {
+          "gcCount": 0,
+          "gcPauseNanos": 0,
+          "largeByteArrayOutsideTlabEvents": [],
+          "allocationSites": [
+            {
+              "site": "[B at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 23
+            },
+            {
+              "site": "INITIALIZE_BYTE_ARRAYS",
+              "samples": 23
+            },
+            {
+              "site": "java.nio.DirectByteBufferR at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 20
+            },
+            {
+              "site": "io.netty.channel.DefaultChannelPromise at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 21
+            },
+            {
+              "site": "java.nio.DirectByteBuffer at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 16
+            },
+            {
+              "site": "java.util.concurrent.atomic.AtomicInteger at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 12
+            },
+            {
+              "site": "org.eclipse.jetty.io.internal.ByteBufferChunk$WithRetainable at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 13
+            },
+            {
+              "site": "io.netty.handler.codec.http.DefaultHttpContent at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 10
+            },
+            {
+              "site": "org.eclipse.jetty.io.Retainable$ReferenceCounter at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 9
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange$$Lambda.0x00007f77d45fa8f8 at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 7
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange$$Lambda.0x00007f77d45e0000 at dev.example.proxy.transport.ProxyExchange.signal",
+              "samples": 6
+            },
+            {
+              "site": "[B at dev.example.proxy.api.Headers.normalizeName",
+              "samples": 3
+            },
+            {
+              "site": "[Ljava.util.HashMap$Node; at dev.example.proxy.api.Headers.add",
+              "samples": 3
+            },
+            {
+              "site": "io.netty.util.concurrent.DefaultPromise at dev.example.proxy.transport.ProxyExchange.acquire",
+              "samples": 1
+            },
+            {
+              "site": "java.util.ArrayList at dev.example.proxy.api.Headers.lambda$add$3",
+              "samples": 1
+            },
+            {
+              "site": "java.lang.String at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 1
+            },
+            {
+              "site": "io.netty.handler.codec.DefaultHeadersImpl at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 1
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange$3 at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 1
+            },
+            {
+              "site": "dev.example.proxy.core.Origin at dev.example.proxy.core.Origin.from",
+              "samples": 1
+            },
+            {
+              "site": "java.util.LinkedHashMap$Entry at dev.example.proxy.api.Headers.add",
+              "samples": 4
+            },
+            {
+              "site": "java.util.LinkedHashMap$Entry at dev.example.proxy.api.Headers.lambda$copy$2",
+              "samples": 3
+            },
+            {
+              "site": "java.util.LinkedHashMap$Entry at dev.example.proxy.api.Headers.lambda$asMap$4",
+              "samples": 2
+            },
+            {
+              "site": "io.netty.handler.codec.HeadersUtils$StringEntry at dev.example.proxy.transport.ProxyExchange.headerMap",
+              "samples": 1
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyExchange.<init>",
+              "samples": 2
+            },
+            {
+              "site": "[B at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 2
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange$1 at dev.example.proxy.transport.ProxyExchange.start",
+              "samples": 1
+            },
+            {
+              "site": "java.net.URI at dev.example.proxy.core.UpstreamUri.resolve",
+              "samples": 1
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 1
+            },
+            {
+              "site": "java.util.ArrayDeque at dev.example.proxy.transport.ProxyExchange.<init>",
+              "samples": 1
+            },
+            {
+              "site": "java.util.JumboEnumSet at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 1
+            }
+          ]
+        }
+      },
+      "download": {
+        "requests": 1024,
+        "allocatedBytesSurvivingThreads": 98517248,
+        "allocatedBytesPerRequestSurvivingThreads": 96208.25,
+        "newThreads": 0,
+        "disappearedThreads": 0,
+        "durationNanos": 869160584,
+        "elapsedNanos": 871767343,
+        "localRequestsPerSecond": 1178.1482258288877,
+        "localP99Millis": 10.182007,
+        "g1RegionBytes": 1048576,
+        "jfrEvidence": {
+          "gcCount": 1,
+          "gcPauseNanos": 3496156,
+          "largeByteArrayOutsideTlabEvents": [],
+          "allocationSites": [
+            {
+              "site": "java.nio.HeapByteBufferR at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 22
+            },
+            {
+              "site": "[B at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 17
+            },
+            {
+              "site": "INITIALIZE_BYTE_ARRAYS",
+              "samples": 17
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.EventsHandler$EventsResponse$$Lambda.0x00007f77d4551898 at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 13
+            },
+            {
+              "site": "org.eclipse.jetty.ee11.servlet.HttpOutput$AsyncWrite at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 11
+            },
+            {
+              "site": "java.util.concurrent.locks.ReentrantLock$NonfairSync at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 12
+            },
+            {
+              "site": "org.eclipse.jetty.ee11.servlet.HttpOutput$AsyncFlush at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 11
+            },
+            {
+              "site": "org.eclipse.jetty.util.thread.SerializedInvoker$Link at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 11
+            },
+            {
+              "site": "org.eclipse.jetty.util.Callback$4 at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 11
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.EventsHandler$EventsResponse$$Lambda.0x00007f77d4551670 at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 9
+            },
+            {
+              "site": "java.nio.HeapByteBuffer at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 7
+            },
+            {
+              "site": "org.eclipse.jetty.util.IteratingCallback$$Lambda.0x00007f77d448d718 at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 7
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange$$Lambda.0x00007f77d45e0000 at dev.example.proxy.transport.ProxyExchange.signal",
+              "samples": 6
+            },
+            {
+              "site": "java.util.concurrent.atomic.AtomicReference at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 5
+            },
+            {
+              "site": "org.eclipse.jetty.util.thread.Invocable$ReadyTask at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 5
+            },
+            {
+              "site": "java.util.concurrent.locks.ReentrantLock at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 5
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.ContextResponse$1$$Lambda.0x00007f77d4553418 at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 4
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.ContextResponse$1 at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 4
+            },
+            {
+              "site": "org.eclipse.jetty.util.thread.AutoLock at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 4
+            },
+            {
+              "site": "io.netty.channel.nio.NioIoOps$DefaultNioIoEvent at dev.example.proxy.transport.ProxyExchange.demand",
+              "samples": 3
+            },
+            {
+              "site": "java.util.LinkedHashMap at dev.example.proxy.api.Headers.<init>",
+              "samples": 2
+            },
+            {
+              "site": "[Ljava.nio.ByteBuffer; at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 2
+            },
+            {
+              "site": "java.util.ArrayList at dev.example.proxy.api.Headers.lambda$add$3",
+              "samples": 1
+            },
+            {
+              "site": "org.eclipse.jetty.server.internal.HttpChannelState$ChannelResponse$$Lambda.0x00007f77d45527f0 at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 1
+            },
+            {
+              "site": "io.netty.channel.nio.NioIoOps at dev.example.proxy.transport.ProxyExchange.demand",
+              "samples": 1
+            },
+            {
+              "site": "io.netty.channel.DefaultChannelPromise at dev.example.proxy.transport.ProxyExchange.endUpload",
+              "samples": 1
+            },
+            {
+              "site": "java.lang.String at dev.example.proxy.transport.ProxyExchange.lambda$headerMap$13",
+              "samples": 1
+            },
+            {
+              "site": "java.util.ArrayList at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 2
+            },
+            {
+              "site": "io.github.resilience4j.circuitbreaker.CircuitBreaker$$Lambda.0x00007f77d4582928 at dev.example.resilience.CommandExecutor.execute",
+              "samples": 2
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.api.Headers.lambda$asMap$4",
+              "samples": 2
+            }
+          ]
+        }
+      },
+      "tiny": {
+        "requests": 64,
+        "allocatedBytesSurvivingThreads": 179791456,
+        "allocatedBytesPerRequestSurvivingThreads": 2809241.5,
+        "newThreads": 0,
+        "disappearedThreads": 0,
+        "durationNanos": 428334092,
+        "elapsedNanos": 429234997,
+        "localRequestsPerSecond": 149.41607776576421,
+        "localP99Millis": 77.959652,
+        "g1RegionBytes": 1048576,
+        "jfrEvidence": {
+          "gcCount": 2,
+          "gcPauseNanos": 14849114,
+          "largeByteArrayOutsideTlabEvents": [],
+          "allocationSites": [
+            {
+              "site": "INITIALIZE_BYTE_ARRAYS",
+              "samples": 2
+            },
+            {
+              "site": "[B at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 2
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 11
+            },
+            {
+              "site": "java.util.LinkedHashMap$Entry at dev.example.proxy.api.Headers.add",
+              "samples": 1
+            },
+            {
+              "site": "org.eclipse.jetty.util.Callback$4 at dev.example.proxy.transport.ProxyExchange.pumpDownload",
+              "samples": 1
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyExchange.received",
+              "samples": 1
+            },
+            {
+              "site": "dev.example.resilience.CommandExecutor$Execution at dev.example.resilience.CommandExecutor.execute",
+              "samples": 1
+            }
+          ]
+        }
+      }
+    }
+  },
+  "candidate": {
+    "label": "candidate-coalesced",
+    "jarSha256": "4c682a7b860588429ca1b58be2d65e42ff82b71f3e2af6f532819748bb6d69a9",
+    "javaVersion": "openjdk version \"21.0.12.1\" 2026-08-18 LTS\nOpenJDK Runtime Environment Temurin-21.0.12.1+1 (build 21.0.12.1+1-LTS)\nOpenJDK 64-Bit Server VM Temurin-21.0.12.1+1 (build 21.0.12.1+1-LTS, mixed mode, sharing)",
+    "workers": 4,
+    "bodyBytes": 1048576,
+    "tinyBodyBytes": 65536,
+    "heapBytes": 268435456,
+    "allocatorWarmup": {
+      "g1RegionBytes": 1048576,
+      "largeByteArrayOutsideTlabEvents": []
+    },
+    "phases": {
+      "head": {
+        "requests": 5000,
+        "allocatedBytesSurvivingThreads": 67205528,
+        "allocatedBytesPerRequestSurvivingThreads": 13441.1056,
+        "newThreads": 0,
+        "disappearedThreads": 0,
+        "durationNanos": 1636671084,
+        "elapsedNanos": 1638816808,
+        "localRequestsPerSecond": 3054.9815713613475,
+        "localP99Millis": 3.875439,
+        "g1RegionBytes": 1048576,
+        "jfrEvidence": {
+          "gcCount": 0,
+          "gcPauseNanos": 0,
+          "largeByteArrayOutsideTlabEvents": [],
+          "allocationSites": [
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange$$Lambda.0x00007fcdd86115f8 at dev.example.proxy.transport.ProxyExchange.headerMap",
+              "samples": 3
+            },
+            {
+              "site": "java.util.TreeMap$Entry at dev.example.proxy.transport.ProxyEngine.lambda$forwardAsync$0",
+              "samples": 7
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 6
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyExchange.lambda$headerMap$12",
+              "samples": 3
+            },
+            {
+              "site": "io.netty.util.concurrent.DefaultPromise at dev.example.proxy.transport.ProxyExchange.releaseChannel",
+              "samples": 2
+            },
+            {
+              "site": "java.util.concurrent.atomic.AtomicReference at dev.example.proxy.transport.ProxyExchange.terminate",
+              "samples": 1
+            },
+            {
+              "site": "java.nio.HeapByteBufferR at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 2
+            },
+            {
+              "site": "org.eclipse.jetty.http.HttpFields$3 at dev.example.proxy.transport.ProxyEngine.lambda$forwardAsync$0",
+              "samples": 5
+            },
+            {
+              "site": "[Lio.netty.handler.codec.DefaultHeaders$HeaderEntry; at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 3
+            },
+            {
+              "site": "io.netty.util.concurrent.ScheduledFutureTask at dev.example.proxy.transport.ProxyExchange.acquire",
+              "samples": 2
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyEngine.lambda$forwardAsync$0",
+              "samples": 6
+            },
+            {
+              "site": "org.eclipse.jetty.ee11.servlet.ServletCoreResponse$HttpServletResponseHttpFields at dev.example.app.transport.JettyProxyIoAdapter.createWriter",
+              "samples": 2
+            },
+            {
+              "site": "java.net.URI at dev.example.proxy.core.UpstreamUri.resolve",
+              "samples": 3
+            },
+            {
+              "site": "java.lang.String at dev.example.proxy.core.UpstreamUri.requestTarget",
+              "samples": 2
+            },
+            {
+              "site": "dev.example.proxy.api.Headers$$Lambda.0x00007fcdd8585158 at dev.example.proxy.api.Headers.lambda$copyOf$1",
+              "samples": 2
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.ContextHandler$ScopedContext$$Lambda.0x00007fcdd85dcdf8 at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 2
+            },
+            {
+              "site": "org.eclipse.jetty.http.ImmutableHttpFields$Listerator at dev.example.proxy.transport.ProxyEngine.lambda$forwardAsync$0",
+              "samples": 3
+            },
+            {
+              "site": "java.util.ArrayList$Itr at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 3
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 4
+            },
+            {
+              "site": "java.util.concurrent.CompletableFuture$UniRelay at dev.example.resilience.CommandExecutor$Execution.<init>",
+              "samples": 4
+            },
+            {
+              "site": "io.netty.handler.codec.HeadersUtils$StringEntry at dev.example.proxy.transport.ProxyExchange.headerMap",
+              "samples": 2
+            },
+            {
+              "site": "[Ljava.util.HashMap$Node; at dev.example.proxy.api.Headers.lambda$immutableCopyOf$2",
+              "samples": 4
+            },
+            {
+              "site": "org.eclipse.jetty.util.thread.SerializedInvoker$Link at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 2
+            },
+            {
+              "site": "[B at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 3
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.api.Headers.lambda$add$4",
+              "samples": 2
+            },
+            {
+              "site": "java.util.concurrent.CompletableFuture$UniWhenComplete at dev.example.resilience.CommandExecutor$Execution.publishTask",
+              "samples": 4
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange$$Lambda.0x00007fcdd8613fa0 at dev.example.proxy.transport.ProxyExchange.releaseChannel",
+              "samples": 1
+            },
+            {
+              "site": "io.netty.channel.nio.NioIoOps$DefaultNioIoEvent at dev.example.proxy.transport.ProxyExchange.demand",
+              "samples": 1
+            },
+            {
+              "site": "org.eclipse.jetty.util.thread.SerializedInvoker$Link at dev.example.proxy.transport.ProxyExchange.terminate",
+              "samples": 1
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange$$Lambda.0x00007fcdd8614cf8 at dev.example.proxy.transport.ProxyExchange.containerFinished",
+              "samples": 1
+            }
+          ]
+        }
+      },
+      "upload": {
+        "requests": 1024,
+        "allocatedBytesSurvivingThreads": 61002248,
+        "allocatedBytesPerRequestSurvivingThreads": 59572.5078125,
+        "newThreads": 0,
+        "disappearedThreads": 0,
+        "durationNanos": 913182932,
+        "elapsedNanos": 914329502,
+        "localRequestsPerSecond": 1121.3525396902621,
+        "localP99Millis": 9.214026,
+        "g1RegionBytes": 1048576,
+        "jfrEvidence": {
+          "gcCount": 1,
+          "gcPauseNanos": 9531113,
+          "largeByteArrayOutsideTlabEvents": [],
+          "allocationSites": [
+            {
+              "site": "java.nio.DirectByteBuffer at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 18
+            },
+            {
+              "site": "java.nio.DirectByteBufferR at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 19
+            },
+            {
+              "site": "org.eclipse.jetty.io.internal.ByteBufferChunk$WithRetainable at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 16
+            },
+            {
+              "site": "org.eclipse.jetty.io.Retainable$ReferenceCounter at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 15
+            },
+            {
+              "site": "java.util.concurrent.atomic.AtomicInteger at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 12
+            },
+            {
+              "site": "io.netty.channel.DefaultChannelPromise at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 11
+            },
+            {
+              "site": "io.netty.handler.codec.http.DefaultHttpContent at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 6
+            },
+            {
+              "site": "java.util.TreeMap$Entry at dev.example.proxy.transport.ProxyExchange.lambda$headerMap$12",
+              "samples": 2
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange$$Lambda.0x00007fcdd8617ba8 at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 2
+            },
+            {
+              "site": "io.netty.handler.codec.DefaultHeaders$HeaderIterator at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 1
+            },
+            {
+              "site": "java.lang.String at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 1
+            },
+            {
+              "site": "java.nio.DirectByteBuffer at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 1
+            },
+            {
+              "site": "io.netty.handler.codec.DefaultHeaders$HeaderEntry at dev.example.proxy.transport.ProxyExchange.lambda$initialize$6",
+              "samples": 1
+            },
+            {
+              "site": "[Lorg.eclipse.jetty.http.HttpField; at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 1
+            },
+            {
+              "site": "java.util.LinkedHashMap at dev.example.proxy.api.Headers.<init>",
+              "samples": 2
+            },
+            {
+              "site": "dev.example.resilience.CommandExecutor$Execution at dev.example.resilience.CommandExecutor.execute",
+              "samples": 2
+            },
+            {
+              "site": "io.netty.util.concurrent.DefaultPromise at dev.example.proxy.transport.ProxyExchange.releaseChannel",
+              "samples": 1
+            },
+            {
+              "site": "java.util.ArrayList at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 2
+            },
+            {
+              "site": "java.util.concurrent.CompletableFuture$MinimalStage at dev.example.app.command.ProxyRequestCommand.start",
+              "samples": 1
+            },
+            {
+              "site": "io.github.resilience4j.circuitbreaker.CircuitBreakerConfig$TransitionCheckResult at dev.example.resilience.CommandExecutor$Execution.lambda$publishTask$0",
+              "samples": 1
+            },
+            {
+              "site": "[B at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 1
+            },
+            {
+              "site": "INITIALIZE_BYTE_ARRAYS",
+              "samples": 1
+            },
+            {
+              "site": "java.util.LinkedHashMap$Entry at dev.example.proxy.api.Headers.lambda$immutableCopyOf$2",
+              "samples": 1
+            },
+            {
+              "site": "java.util.TreeMap$Entry at dev.example.proxy.transport.ProxyEngine.lambda$forwardAsync$0",
+              "samples": 1
+            },
+            {
+              "site": "java.util.concurrent.CompletableFuture$UniRelay at dev.example.proxy.transport.ProxyExchange.<init>",
+              "samples": 1
+            },
+            {
+              "site": "dev.example.proxy.api.Headers$$Lambda.0x00007fcdd8585158 at dev.example.proxy.api.Headers.lambda$copyOf$1",
+              "samples": 1
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyEngine.lambda$forwardAsync$0",
+              "samples": 1
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 1
+            },
+            {
+              "site": "java.util.LinkedHashMap at dev.example.proxy.api.Headers.immutableCopyOf",
+              "samples": 2
+            },
+            {
+              "site": "io.github.resilience4j.timelimiter.internal.TimeLimiterImpl$$Lambda.0x00007fcdd8556a88 at dev.example.resilience.CommandExecutor.lambda$execute$3",
+              "samples": 1
+            }
+          ]
+        }
+      },
+      "download": {
+        "requests": 1024,
+        "allocatedBytesSurvivingThreads": 73089912,
+        "allocatedBytesPerRequestSurvivingThreads": 71376.8671875,
+        "newThreads": 0,
+        "disappearedThreads": 0,
+        "durationNanos": 854677837,
+        "elapsedNanos": 855746031,
+        "localRequestsPerSecond": 1198.1122660139836,
+        "localP99Millis": 8.664415,
+        "g1RegionBytes": 1048576,
+        "jfrEvidence": {
+          "gcCount": 0,
+          "gcPauseNanos": 0,
+          "largeByteArrayOutsideTlabEvents": [],
+          "allocationSites": [
+            {
+              "site": "java.nio.DirectByteBufferR at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 17
+            },
+            {
+              "site": "java.nio.DirectByteBuffer at dev.example.proxy.transport.ProxyExchange.pumpNativeDownload",
+              "samples": 16
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.EventsHandler$EventsResponse$$Lambda.0x00007fcdd854e000 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 10
+            },
+            {
+              "site": "org.eclipse.jetty.util.Callback$4 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 9
+            },
+            {
+              "site": "org.eclipse.jetty.util.thread.SerializedInvoker$Link at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 10
+            },
+            {
+              "site": "java.util.concurrent.atomic.AtomicReference at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 11
+            },
+            {
+              "site": "java.nio.HeapByteBufferR at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 9
+            },
+            {
+              "site": "[Ljava.nio.ByteBuffer; at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 8
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.ContextResponse$1$$Lambda.0x00007fcdd854fb80 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 6
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.ContextResponse$1 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 6
+            },
+            {
+              "site": "dev.example.app.transport.JettyProxyIoAdapter$WriteCallback at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 6
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.EventsHandler$EventsResponse$$Lambda.0x00007fcdd854bd88 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 5
+            },
+            {
+              "site": "org.eclipse.jetty.server.internal.HttpChannelState$ChannelResponse$$Lambda.0x00007fcdd854ef58 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 4
+            },
+            {
+              "site": "org.eclipse.jetty.util.thread.Invocable$ReadyTask at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 3
+            },
+            {
+              "site": "java.util.LinkedHashMap$Entry at dev.example.proxy.api.Headers.add",
+              "samples": 1
+            },
+            {
+              "site": "io.netty.handler.codec.http.DefaultHttpRequest at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 1
+            },
+            {
+              "site": "java.lang.String at dev.example.proxy.core.UpstreamUri.resolve",
+              "samples": 2
+            },
+            {
+              "site": "io.netty.channel.nio.NioIoOps at dev.example.proxy.transport.ProxyExchange.demand",
+              "samples": 1
+            },
+            {
+              "site": "org.eclipse.jetty.http.MetaData$Response at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 1
+            },
+            {
+              "site": "java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask at dev.example.resilience.CommandExecutor$TimeoutScheduler.schedule",
+              "samples": 1
+            },
+            {
+              "site": "java.net.URI at dev.example.proxy.core.UpstreamUri.resolve",
+              "samples": 1
+            },
+            {
+              "site": "dev.example.resilience.CommandExecutor$Execution$$Lambda.0x00007fcdd858afd0 at dev.example.resilience.CommandExecutor$Execution.publishTask",
+              "samples": 1
+            },
+            {
+              "site": "io.netty.handler.codec.DefaultHeaders$HeaderEntry at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 1
+            },
+            {
+              "site": "java.util.concurrent.CompletableFuture at dev.example.resilience.CommandExecutor.lambda$execute$3",
+              "samples": 1
+            },
+            {
+              "site": "java.util.ImmutableCollections$List12 at dev.example.proxy.api.Headers.lambda$immutableCopyOf$2",
+              "samples": 1
+            },
+            {
+              "site": "java.util.concurrent.CompletableFuture$MinimalStage at dev.example.proxy.transport.ProxyExchange.<init>",
+              "samples": 1
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.api.Headers.lambda$immutableCopyOf$2",
+              "samples": 1
+            },
+            {
+              "site": "org.eclipse.jetty.http.HttpFields$3 at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 1
+            },
+            {
+              "site": "dev.example.app.command.ProxyRequestCommand$1 at dev.example.app.command.ProxyRequestCommand.start",
+              "samples": 1
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 1
+            }
+          ]
+        }
+      },
+      "tiny": {
+        "requests": 64,
+        "allocatedBytesSurvivingThreads": 179854872,
+        "allocatedBytesPerRequestSurvivingThreads": 2810232.375,
+        "newThreads": 0,
+        "disappearedThreads": 0,
+        "durationNanos": 304418772,
+        "elapsedNanos": 305194957,
+        "localRequestsPerSecond": 210.23670642755238,
+        "localP99Millis": 40.667954,
+        "g1RegionBytes": 1048576,
+        "jfrEvidence": {
+          "gcCount": 2,
+          "gcPauseNanos": 8105992,
+          "largeByteArrayOutsideTlabEvents": [],
+          "allocationSites": [
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyExchange.pumpNativeDownload",
+              "samples": 23
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyExchange.received",
+              "samples": 2
+            },
+            {
+              "site": "io.netty.util.concurrent.DefaultPromise at dev.example.proxy.transport.ProxyExchange.releaseChannel",
+              "samples": 1
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.EventsHandler$EventsResponse$$Lambda.0x00007fcdd854e000 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 1
+            }
+          ]
+        }
+      }
+    }
+  },
+  "comparison": {
+    "head": {
+      "baselineBytesPerRequest": 30592.5472,
+      "candidateBytesPerRequest": 13441.1056,
+      "changeBytesPerRequest": -17151.4416,
+      "changePercentInThisRun": -56.06411747237575
+    },
+    "upload": {
+      "baselineBytesPerRequest": 78961.609375,
+      "candidateBytesPerRequest": 59572.5078125,
+      "changeBytesPerRequest": -19389.1015625,
+      "changePercentInThisRun": -24.555099264021298
+    },
+    "download": {
+      "baselineBytesPerRequest": 96208.25,
+      "candidateBytesPerRequest": 71376.8671875,
+      "changeBytesPerRequest": -24831.3828125,
+      "changePercentInThisRun": -25.810034807306025
+    },
+    "tiny": {
+      "baselineBytesPerRequest": 2809241.5,
+      "candidateBytesPerRequest": 2810232.375,
+      "changeBytesPerRequest": 990.875,
+      "changePercentInThisRun": 0.03527197643919955
+    }
+  },
+  "rejectedCandidateWithoutCoalescing": {
+    "label": "candidate",
+    "jarSha256": "b16d8d8f8259637286ae6b8cb3db89fe01805d0140b796cb7ffb84606664b056",
+    "javaVersion": "openjdk version \"21.0.12.1\" 2026-08-18 LTS\nOpenJDK Runtime Environment Temurin-21.0.12.1+1 (build 21.0.12.1+1-LTS)\nOpenJDK 64-Bit Server VM Temurin-21.0.12.1+1 (build 21.0.12.1+1-LTS, mixed mode, sharing)",
+    "workers": 4,
+    "bodyBytes": 1048576,
+    "tinyBodyBytes": 65536,
+    "heapBytes": 268435456,
+    "allocatorWarmup": {
+      "g1RegionBytes": 1048576,
+      "largeByteArrayOutsideTlabEvents": []
+    },
+    "phases": {
+      "head": {
+        "requests": 5000,
+        "allocatedBytesSurvivingThreads": 65414536,
+        "allocatedBytesPerRequestSurvivingThreads": 13082.9072,
+        "newThreads": 0,
+        "disappearedThreads": 0,
+        "durationNanos": 1673387747,
+        "elapsedNanos": 1674969190,
+        "localRequestsPerSecond": 2987.950646204893,
+        "localP99Millis": 3.864789,
+        "g1RegionBytes": 1048576,
+        "jfrEvidence": {
+          "gcCount": 1,
+          "gcPauseNanos": 4544853,
+          "largeByteArrayOutsideTlabEvents": [],
+          "allocationSites": [
+            {
+              "site": "[B at dev.example.proxy.api.Headers.normalizeName",
+              "samples": 9
+            },
+            {
+              "site": "org.eclipse.jetty.http.ImmutableHttpFields at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 2
+            },
+            {
+              "site": "[Ljava.util.HashMap$Node; at dev.example.proxy.api.Headers.add",
+              "samples": 5
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 12
+            },
+            {
+              "site": "java.lang.String at dev.example.proxy.core.UpstreamUri.requestTarget",
+              "samples": 2
+            },
+            {
+              "site": "org.eclipse.jetty.util.thread.SerializedInvoker$Link at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 2
+            },
+            {
+              "site": "io.netty.util.concurrent.ScheduledFutureTask at dev.example.proxy.transport.ProxyExchange.awaitResponseHeaders",
+              "samples": 2
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyExchange.lambda$headerMap$12",
+              "samples": 2
+            },
+            {
+              "site": "java.lang.String at dev.example.proxy.api.Headers.normalizeName",
+              "samples": 6
+            },
+            {
+              "site": "java.util.LinkedHashMap$Entry at dev.example.proxy.api.Headers.add",
+              "samples": 4
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.EventsHandler$EventsResponse$$Lambda.0x00007ffa84554228 at dev.example.proxy.transport.ProxyExchange.terminate",
+              "samples": 2
+            },
+            {
+              "site": "java.util.concurrent.CompletableFuture$UniWhenComplete at dev.example.resilience.CommandExecutor.execute",
+              "samples": 6
+            },
+            {
+              "site": "[B at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 6
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.api.Headers.lambda$add$4",
+              "samples": 2
+            },
+            {
+              "site": "java.util.LinkedHashMap at dev.example.proxy.api.Headers.<init>",
+              "samples": 3
+            },
+            {
+              "site": "java.util.concurrent.CompletableFuture$UniWhenComplete at dev.example.resilience.CommandExecutor.lambda$execute$3",
+              "samples": 6
+            },
+            {
+              "site": "java.util.concurrent.atomic.AtomicBoolean at dev.example.proxy.transport.ProxyExchange.<init>",
+              "samples": 6
+            },
+            {
+              "site": "java.net.URI at dev.example.proxy.core.UpstreamUri.resolve",
+              "samples": 6
+            },
+            {
+              "site": "[Ljava.util.HashMap$Node; at dev.example.proxy.api.Headers.lambda$immutableCopyOf$2",
+              "samples": 5
+            },
+            {
+              "site": "io.netty.channel.pool.FixedChannelPool$AcquireListener at dev.example.proxy.transport.ProxyExchange.acquire",
+              "samples": 1
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.ContextResponse$1 at dev.example.proxy.transport.ProxyExchange.terminate",
+              "samples": 1
+            },
+            {
+              "site": "java.util.concurrent.atomic.AtomicReference at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 1
+            },
+            {
+              "site": "org.eclipse.jetty.util.thread.SerializedInvoker$Link at dev.example.proxy.transport.ProxyExchange.terminate",
+              "samples": 1
+            },
+            {
+              "site": "[B at dev.example.proxy.transport.ProxyExchange.lambda$headerMap$12",
+              "samples": 1
+            },
+            {
+              "site": "org.eclipse.jetty.http.HttpField at dev.example.proxy.transport.ProxyExchange$$Lambda.0x00007ffa845f2378.accept",
+              "samples": 1
+            },
+            {
+              "site": "java.util.TreeMap$Entry at dev.example.proxy.transport.ProxyExchange.lambda$headerMap$12",
+              "samples": 1
+            },
+            {
+              "site": "io.netty.channel.DefaultChannelPromise at dev.example.proxy.transport.ProxyExchange.endUpload",
+              "samples": 1
+            },
+            {
+              "site": "java.lang.String at dev.example.proxy.core.Origin.authority",
+              "samples": 1
+            },
+            {
+              "site": "java.lang.Long at dev.example.resilience.CommandExecutor$Execution.lambda$publishTask$0",
+              "samples": 1
+            },
+            {
+              "site": "org.eclipse.jetty.util.Callback$4 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 1
+            }
+          ]
+        }
+      },
+      "upload": {
+        "requests": 1024,
+        "allocatedBytesSurvivingThreads": 60470224,
+        "allocatedBytesPerRequestSurvivingThreads": 59052.953125,
+        "newThreads": 0,
+        "disappearedThreads": 0,
+        "durationNanos": 1037828165,
+        "elapsedNanos": 1038855805,
+        "localRequestsPerSecond": 986.6758626655695,
+        "localP99Millis": 11.394318,
+        "g1RegionBytes": 1048576,
+        "jfrEvidence": {
+          "gcCount": 0,
+          "gcPauseNanos": 0,
+          "largeByteArrayOutsideTlabEvents": [],
+          "allocationSites": [
+            {
+              "site": "org.eclipse.jetty.io.internal.ByteBufferChunk$WithRetainable at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 23
+            },
+            {
+              "site": "java.nio.DirectByteBuffer at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 22
+            },
+            {
+              "site": "io.netty.channel.DefaultChannelPromise at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 16
+            },
+            {
+              "site": "java.nio.DirectByteBufferR at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 15
+            },
+            {
+              "site": "org.eclipse.jetty.io.Retainable$ReferenceCounter at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 7
+            },
+            {
+              "site": "java.util.concurrent.atomic.AtomicInteger at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 9
+            },
+            {
+              "site": "io.netty.handler.codec.http.DefaultHttpContent at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 5
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange$$Lambda.0x00007ffa845f84e0 at dev.example.proxy.transport.ProxyExchange.pumpUpload",
+              "samples": 5
+            },
+            {
+              "site": "java.nio.HeapByteBufferR at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 2
+            },
+            {
+              "site": "io.netty.util.concurrent.DefaultPromise at dev.example.proxy.transport.ProxyExchange.acquire",
+              "samples": 1
+            },
+            {
+              "site": "dev.example.proxy.transport.NettyTransport$PoolKey at dev.example.proxy.transport.NettyTransport.pool",
+              "samples": 1
+            },
+            {
+              "site": "java.net.URI at dev.example.proxy.core.UpstreamUri.requestTarget",
+              "samples": 1
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyEngine.lambda$forwardAsync$0",
+              "samples": 4
+            },
+            {
+              "site": "org.eclipse.jetty.ee11.servlet.ServletChannel$$Lambda.0x00007ffa84556208 at dev.example.proxy.transport.ProxyExchange.terminate",
+              "samples": 1
+            },
+            {
+              "site": "[B at dev.example.proxy.core.UpstreamUri.resolve",
+              "samples": 4
+            },
+            {
+              "site": "java.util.ArrayList at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 3
+            },
+            {
+              "site": "java.util.TreeMap$Entry at dev.example.proxy.transport.ProxyEngine.lambda$forwardAsync$0",
+              "samples": 2
+            },
+            {
+              "site": "dev.example.app.transport.JettyProxyIoAdapter$Writer at dev.example.app.transport.JettyProxyIoAdapter.createWriter",
+              "samples": 1
+            },
+            {
+              "site": "java.util.LinkedHashMap$Entry at dev.example.proxy.api.Headers.add",
+              "samples": 2
+            },
+            {
+              "site": "java.util.concurrent.CompletableFuture at dev.example.resilience.CommandExecutor.execute",
+              "samples": 2
+            },
+            {
+              "site": "java.util.LinkedHashMap$Entry at dev.example.proxy.api.Headers.lambda$asMap$6",
+              "samples": 2
+            },
+            {
+              "site": "java.util.ArrayList at dev.example.proxy.transport.ProxyEngine.lambda$forwardAsync$0",
+              "samples": 2
+            },
+            {
+              "site": "java.util.concurrent.CompletableFuture$UniWhenComplete at dev.example.resilience.CommandExecutor.lambda$execute$3",
+              "samples": 2
+            },
+            {
+              "site": "dev.example.resilience.CommandExecutor$Execution at dev.example.resilience.CommandExecutor.execute",
+              "samples": 2
+            },
+            {
+              "site": "java.lang.String at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 2
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyExchange.<init>",
+              "samples": 2
+            },
+            {
+              "site": "[B at dev.example.proxy.api.Headers.normalizeName",
+              "samples": 1
+            },
+            {
+              "site": "java.util.LinkedHashMap$Entry at dev.example.proxy.api.Headers.lambda$immutableCopyOf$2",
+              "samples": 1
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyExchange.start",
+              "samples": 1
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 1
+            }
+          ]
+        }
+      },
+      "download": {
+        "requests": 1024,
+        "allocatedBytesSurvivingThreads": 76464872,
+        "allocatedBytesPerRequestSurvivingThreads": 74672.7265625,
+        "newThreads": 0,
+        "disappearedThreads": 0,
+        "durationNanos": 809011596,
+        "elapsedNanos": 810016318,
+        "localRequestsPerSecond": 1265.7420549507178,
+        "localP99Millis": 8.606703,
+        "g1RegionBytes": 1048576,
+        "jfrEvidence": {
+          "gcCount": 1,
+          "gcPauseNanos": 6022693,
+          "largeByteArrayOutsideTlabEvents": [],
+          "allocationSites": [
+            {
+              "site": "java.nio.DirectByteBuffer at dev.example.proxy.transport.ProxyExchange.pumpNativeDownload",
+              "samples": 17
+            },
+            {
+              "site": "java.nio.HeapByteBufferR at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 15
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.EventsHandler$EventsResponse$$Lambda.0x00007ffa84554000 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 13
+            },
+            {
+              "site": "java.nio.DirectByteBufferR at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 13
+            },
+            {
+              "site": "org.eclipse.jetty.server.internal.HttpChannelState$ChannelResponse$$Lambda.0x00007ffa84555180 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 9
+            },
+            {
+              "site": "org.eclipse.jetty.util.Callback$4 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 8
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.ContextResponse$1$$Lambda.0x00007ffa84555da8 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 7
+            },
+            {
+              "site": "java.util.concurrent.atomic.AtomicReference at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 6
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.EventsHandler$EventsResponse$$Lambda.0x00007ffa84554228 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 7
+            },
+            {
+              "site": "org.eclipse.jetty.util.thread.SerializedInvoker$Link at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 5
+            },
+            {
+              "site": "org.eclipse.jetty.util.thread.Invocable$ReadyTask at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 5
+            },
+            {
+              "site": "io.netty.channel.nio.NioIoOps$DefaultNioIoEvent at dev.example.proxy.transport.ProxyExchange.demand",
+              "samples": 5
+            },
+            {
+              "site": "io.netty.channel.nio.NioIoOps at dev.example.proxy.transport.ProxyExchange.demand",
+              "samples": 4
+            },
+            {
+              "site": "[Ljava.nio.ByteBuffer; at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 5
+            },
+            {
+              "site": "dev.example.app.transport.JettyProxyIoAdapter$WriteCallback at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 3
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.ContextResponse$1 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 2
+            },
+            {
+              "site": "io.netty.handler.codec.DefaultHeaders$HeaderIterator at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 1
+            },
+            {
+              "site": "java.util.TreeMap$Entry at dev.example.proxy.transport.ProxyExchange.lambda$headerMap$12",
+              "samples": 1
+            },
+            {
+              "site": "io.netty.util.concurrent.DefaultPromise at dev.example.proxy.transport.ProxyExchange.acquire",
+              "samples": 1
+            },
+            {
+              "site": "[B at dev.example.proxy.core.Origin.authority",
+              "samples": 1
+            },
+            {
+              "site": "io.netty.handler.codec.DefaultHeadersImpl at dev.example.proxy.transport.ProxyExchange.initialize",
+              "samples": 1
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.EventsHandler$EventsResponse$$Lambda.0x00007ffa84554228 at dev.example.proxy.transport.ProxyExchange.terminate",
+              "samples": 1
+            },
+            {
+              "site": "INITIALIZE_BYTE_ARRAYS",
+              "samples": 1
+            },
+            {
+              "site": "dev.example.proxy.transport.ProxyExchange at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 4
+            },
+            {
+              "site": "org.eclipse.jetty.ee11.servlet.ServletCoreResponse at dev.example.app.transport.JettyProxyIoAdapter.createWriter",
+              "samples": 1
+            },
+            {
+              "site": "java.util.LinkedHashMap at dev.example.proxy.api.Headers.immutableCopyOf",
+              "samples": 3
+            },
+            {
+              "site": "java.lang.Long at dev.example.resilience.CommandExecutor$Execution.lambda$publishTask$0",
+              "samples": 1
+            },
+            {
+              "site": "java.util.TreeMap$Entry at dev.example.proxy.transport.ProxyEngine.lambda$forwardAsync$0",
+              "samples": 3
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyExchange.start",
+              "samples": 3
+            },
+            {
+              "site": "java.util.concurrent.ConcurrentHashMap$Node at dev.example.proxy.transport.NettyTransport.register",
+              "samples": 1
+            }
+          ]
+        }
+      },
+      "tiny": {
+        "requests": 64,
+        "allocatedBytesSurvivingThreads": 2347748096,
+        "allocatedBytesPerRequestSurvivingThreads": 36683564.0,
+        "newThreads": 0,
+        "disappearedThreads": 0,
+        "durationNanos": 5136433543,
+        "elapsedNanos": 5137546795,
+        "localRequestsPerSecond": 12.460007408685362,
+        "localP99Millis": 522.116701,
+        "g1RegionBytes": 1048576,
+        "jfrEvidence": {
+          "gcCount": 15,
+          "gcPauseNanos": 71895640,
+          "largeByteArrayOutsideTlabEvents": [],
+          "allocationSites": [
+            {
+              "site": "java.nio.DirectByteBufferR at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 522
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.EventsHandler$EventsResponse$$Lambda.0x00007ffa84554228 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 119
+            },
+            {
+              "site": "java.nio.DirectByteBuffer at dev.example.proxy.transport.ProxyExchange.pumpNativeDownload",
+              "samples": 565
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.EventsHandler$EventsResponse$$Lambda.0x00007ffa84554000 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 170
+            },
+            {
+              "site": "[Ljava.nio.ByteBuffer; at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 177
+            },
+            {
+              "site": "org.eclipse.jetty.util.thread.SerializedInvoker$Link at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 169
+            },
+            {
+              "site": "dev.example.app.transport.JettyProxyIoAdapter$WriteCallback at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 156
+            },
+            {
+              "site": "org.eclipse.jetty.util.thread.Invocable$ReadyTask at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 67
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.ContextResponse$1 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 51
+            },
+            {
+              "site": "org.eclipse.jetty.util.Callback$4 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 90
+            },
+            {
+              "site": "org.eclipse.jetty.server.handler.ContextResponse$1$$Lambda.0x00007ffa84555da8 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 23
+            },
+            {
+              "site": "org.eclipse.jetty.server.internal.HttpChannelState$ChannelResponse$$Lambda.0x00007ffa84555180 at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 40
+            },
+            {
+              "site": "java.util.concurrent.atomic.AtomicReference at dev.example.app.transport.JettyProxyIoAdapter$Writer.write",
+              "samples": 46
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyExchange.finishDownstreamWrite",
+              "samples": 21
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyExchange.received",
+              "samples": 1
+            },
+            {
+              "site": "java.util.concurrent.atomic.AtomicBoolean at dev.example.proxy.transport.ProxyExchange.<init>",
+              "samples": 14
+            },
+            {
+              "site": "[B at dev.example.proxy.api.Headers.normalizeName",
+              "samples": 13
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyExchange.<init>",
+              "samples": 2
+            },
+            {
+              "site": "[Ljava.util.HashMap$Node; at dev.example.proxy.api.Headers.lambda$asMap$6",
+              "samples": 1
+            },
+            {
+              "site": "java.util.LinkedHashMap$Entry at dev.example.proxy.api.Headers.lambda$immutableCopyOf$2",
+              "samples": 1
+            },
+            {
+              "site": "[Ljava.lang.Object; at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 2
+            },
+            {
+              "site": "java.util.LinkedHashMap at dev.example.proxy.api.Headers.asMap",
+              "samples": 1
+            },
+            {
+              "site": "java.lang.String at dev.example.proxy.api.Headers.normalizeName",
+              "samples": 1
+            },
+            {
+              "site": "java.util.LinkedHashMap at dev.example.proxy.api.Headers.<init>",
+              "samples": 1
+            },
+            {
+              "site": "java.util.ArrayList at dev.example.proxy.transport.ProxyEngine.lambda$forwardAsync$0",
+              "samples": 2
+            },
+            {
+              "site": "org.eclipse.jetty.http.HttpURI$Mutable at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 2
+            },
+            {
+              "site": "[B at dev.example.proxy.transport.ProxyEngine.forwardAsync",
+              "samples": 1
+            },
+            {
+              "site": "java.util.concurrent.CompletableFuture$UniWhenComplete at dev.example.resilience.CommandExecutor.execute",
+              "samples": 1
+            },
+            {
+              "site": "java.util.concurrent.CompletableFuture at dev.example.resilience.CommandExecutor$Execution.<init>",
+              "samples": 1
+            },
+            {
+              "site": "[B at dev.example.proxy.core.UpstreamUri.resolve",
+              "samples": 1
+            }
+          ]
+        }
+      }
+    }
+  },
+  "rejectedCandidateComparison": {
+    "head": {
+      "baselineBytesPerRequest": 30592.5472,
+      "candidateBytesPerRequest": 13082.9072,
+      "changeBytesPerRequest": -17509.64,
+      "changePercentInThisRun": -57.23498565036127
+    },
+    "upload": {
+      "baselineBytesPerRequest": 78961.609375,
+      "candidateBytesPerRequest": 59052.953125,
+      "changeBytesPerRequest": -19908.65625,
+      "changePercentInThisRun": -25.213083177485572
+    },
+    "download": {
+      "baselineBytesPerRequest": 96208.25,
+      "candidateBytesPerRequest": 74672.7265625,
+      "changeBytesPerRequest": -21535.5234375,
+      "changePercentInThisRun": -22.38427934974392
+    },
+    "tiny": {
+      "baselineBytesPerRequest": 2809241.5,
+      "candidateBytesPerRequest": 36683564.0,
+      "changeBytesPerRequest": 33874322.5,
+      "changePercentInThisRun": 1205.8173887862613
+    }
+  },
+  "regressionResolution": "An initial native-write implementation caused a per-small-chunk write/callback allocation regression. The final candidate coalesces only already queued small fragments into one bounded pooled direct buffer, without waiting for more input; contiguous chunks retain the direct-view path."
+}

@@ -1,0 +1,13 @@
+dependencies {
+    implementation platform('org.springframework.boot:spring-boot-dependencies:4.1.1')
+    implementation enforcedPlatform('io.netty:netty-bom:4.2.19.Final')
+    // Servlet API входит в контракт фасада; реализацию контейнера предоставляет приложение.
+    compileOnlyApi 'jakarta.servlet:jakarta.servlet-api:6.1.0'
+    implementation 'io.netty:netty-codec-http'
+    implementation 'io.netty:netty-handler'
+    implementation 'io.netty:netty-resolver-dns'
+    implementation 'org.slf4j:slf4j-api'
+    testImplementation 'jakarta.servlet:jakarta.servlet-api:6.1.0'
+}
+
+java { withSourcesJar() }

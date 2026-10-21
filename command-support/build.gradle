@@ -1,0 +1,29 @@
+apply plugin: 'io.spring.dependency-management'
+
+dependencies {
+    // Явная линия 2.4: BOM Spring Cloud может понизить транзитивный resilience4j.
+    api("io.github.resilience4j:resilience4j-reactor:2.4.0")
+    api("io.github.resilience4j:resilience4j-bulkhead:2.4.0")
+    api("io.github.resilience4j:resilience4j-circuitbreaker:2.4.0")
+    api("io.github.resilience4j:resilience4j-retry:2.4.0")
+    api("io.github.resilience4j:resilience4j-timelimiter:2.4.0")
+    api("io.github.resilience4j:resilience4j-micrometer:2.4.0")
+    api("io.github.resilience4j:resilience4j-core:2.4.0")
+    api("io.projectreactor:reactor-core")
+
+    implementation("org.springframework.boot:spring-boot-starter")
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
+
+    compileOnly 'org.projectlombok:lombok:1.18.22'
+    annotationProcessor 'org.projectlombok:lombok:1.18.22'
+
+    testImplementation("org.springframework.boot:spring-boot-starter-test") {
+        exclude group: "org.mockito", module: "mockito-all"
+    }
+}
+
+test {
+    useJUnitPlatform {
+        excludeEngines 'junit-vintage'
+    }
+}

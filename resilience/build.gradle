@@ -1,0 +1,8 @@
+dependencies {
+    // Configurations are part of the reusable public command API.
+    api 'io.github.resilience4j:resilience4j-circuitbreaker:2.4.0'
+    api 'io.github.resilience4j:resilience4j-bulkhead:2.4.0'
+    api 'io.github.resilience4j:resilience4j-timelimiter:2.4.0'
+}
+
+java { withSourcesJar() }

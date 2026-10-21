@@ -1,0 +1,74 @@
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.tasks.Classpath
+import org.gradle.process.CommandLineArgumentProvider
+
+plugins {
+    id 'org.springframework.boot' version '4.1.1' apply false
+}
+
+abstract class MockitoAgentArguments implements CommandLineArgumentProvider {
+    @Classpath
+    abstract ConfigurableFileCollection getAgentClasspath()
+
+    @Override
+    Iterable<String> asArguments() {
+        ["-javaagent:${agentClasspath.singleFile.absolutePath}".toString()]
+    }
+}
+
+allprojects {
+    group = 'dev.example'
+    version = '1.0.0'
+    repositories { mavenCentral() }
+}
+
+subprojects {
+    apply plugin: 'java-library'
+
+    java {
+        toolchain { languageVersion = JavaLanguageVersion.of(21) }
+    }
+
+    configurations {
+        mockitoAgent {
+            canBeConsumed = false
+            canBeResolved = true
+        }
+    }
+
+    dependencies {
+        testImplementation platform('org.junit:junit-bom:6.0.3')
+        testImplementation 'org.junit.jupiter:junit-jupiter'
+        testImplementation 'org.mockito:mockito-core:5.23.0'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+        mockitoAgent('org.mockito:mockito-core:5.23.0') { transitive = false }
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        options.release = 21
+        options.compilerArgs.add('-parameters')
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+        if (project.name in ['app', 'proxy']) {
+            systemProperty 'io.netty.leakDetection.level', 'paranoid'
+        }
+        // An explicit startup agent works without dynamic/self attachment on recent JDKs.
+        def agentArguments = objects.newInstance(MockitoAgentArguments)
+        agentArguments.agentClasspath.from(configurations.mockitoAgent)
+        jvmArgumentProviders.add(agentArguments)
+        def testTmp = layout.buildDirectory.dir("tmp/${name}")
+        systemProperty 'java.io.tmpdir', testTmp.get().asFile.absolutePath
+        doFirst { testTmp.get().asFile.mkdirs() }
+        testLogging { events 'failed', 'skipped'; exceptionFormat 'full' }
+    }
+}
+
+tasks.named('wrapper') {
+    gradleVersion = '8.14.3'
+    distributionType = Wrapper.DistributionType.BIN
+    distributionSha256Sum = 'bd71102213493060956ec229d946beee57158dbd89d0e62b91bca0fa2c5f3531'
+    networkTimeout = 30000
+}

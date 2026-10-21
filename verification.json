@@ -1,0 +1,100 @@
+{
+  "date": "2026-10-20",
+  "build": "SUCCESSFUL",
+  "task": "clean build --rerun-tasks",
+  "gradle": "8.14.3",
+  "java": "21",
+  "springBoot": "4.1.1",
+  "springWebmvc": "7.0.9",
+  "jetty": "12.1.12",
+  "netty": "4.2.19.Final",
+  "resilience4j": "2.4.0",
+  "tests": {
+    "app": {
+      "tests": 65,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "proxy": {
+      "tests": 85,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "resilience": {
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "totalTests": 168,
+  "independentReviewRoles": 7,
+  "reviewReport": "INDEPENDENT_REVIEW.md",
+  "artifactChecks": {
+    "nestedLibraryJarsMatch": true,
+    "nettyVersionsAligned": true,
+    "jettyVersionsAligned": true,
+    "resilience4jVersionsAligned": true,
+    "tomcatServerAbsent": true,
+    "moduleImportsIsolated": true
+  },
+  "loadAndSoakTestsPerformed": false,
+  "productionDecision": "GO for isolated preproduction trials; production GO pending target SLO/load/soak/security/operations gates",
+  "newRegressionTests": 13,
+  "realTlsIntegrationTests": 4,
+  "upstreamHeaderDeadlineNetworkTests": 3,
+  "newRegressionBaselineTests": 155,
+  "optimizationReport": "OPTIMIZATIONS.md",
+  "bootJarSha256": "8b8a001d573eb3db91e54e6678b938336d885ca44382c9725fb101ae29e2584b",
+  "allocationExperiment": {
+    "performed": true,
+    "report": "perf/results.json",
+    "protocol": "perf/README.md",
+    "scope": "Historical short HTTP/1.1 loopback comparison before latest review/JMX/pool changes; not a measurement of the current build",
+    "rejectedCandidateTinyChunkRegressionResolved": true,
+    "comparison": {
+      "head": {
+        "baselineBytesPerRequest": 30592.5472,
+        "candidateBytesPerRequest": 13441.1056,
+        "changeBytesPerRequest": -17151.4416,
+        "changePercentInThisRun": -56.06411747237575
+      },
+      "upload": {
+        "baselineBytesPerRequest": 78961.609375,
+        "candidateBytesPerRequest": 59572.5078125,
+        "changeBytesPerRequest": -19389.1015625,
+        "changePercentInThisRun": -24.555099264021298
+      },
+      "download": {
+        "baselineBytesPerRequest": 96208.25,
+        "candidateBytesPerRequest": 71376.8671875,
+        "changeBytesPerRequest": -24831.3828125,
+        "changePercentInThisRun": -25.810034807306025
+      },
+      "tiny": {
+        "baselineBytesPerRequest": 2809241.5,
+        "candidateBytesPerRequest": 2810232.375,
+        "changeBytesPerRequest": 990.875,
+        "changePercentInThisRun": 0.03527197643919955
+      }
+    },
+    "measuredCandidateJarSha256": "4c682a7b860588429ca1b58be2d65e42ff82b71f3e2af6f532819748bb6d69a9",
+    "candidateMatchesCurrentBuild": false
+  },
+  "trialPlan": "TRIALS.md",
+  "fullDependencySecurityScanPerformed": false,
+  "confirmedFixes": [
+    "P2: idle/unsolicited-closing channel retired before asynchronous close and excluded from pool acquisition",
+    "Operational gap: app-only read-only JMX diagnostics and local lifecycle availability",
+    "Test race: HTTP response receipt does not imply completed transport cleanup"
+  ],
+  "idleRetirementRegression": {
+    "failedBeforeFix": true,
+    "passedAfterFix": true,
+    "method": "Real NIO socket with controlled delayed physical close models TLS close_notify interval"
+  },
+  "appShutdownDuringTrafficTestPassed": true,
+  "readOnlyJmxIntegrationTests": 3
+}
