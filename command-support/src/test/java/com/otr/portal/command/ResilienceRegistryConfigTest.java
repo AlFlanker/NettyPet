@@ -23,7 +23,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import static org.junit.jupiter.api.Assertions.*;
 
+/** Проверяет Spring-конфигурацию и владение метриками при общих реестрах, фильтрах и закрытии контекстов. */
 class ResilienceRegistryConfigTest {
+    /** Отсутствие MeterRegistry не мешает создать реестры политик и конфигурацию модуля. */
     @Test void springConfigurationWorksWithoutMetricsInfrastructure() {
         try (var context = new AnnotationConfigApplicationContext(ResilienceRegistryConfig.class)) {
             assertNotNull(context.getBean(BulkheadRegistry.class));
@@ -33,12 +35,14 @@ class ResilienceRegistryConfigTest {
         }
     }
 
+    /** Каждый из четырёх реестров по умолчанию публикует метрики фактически используемых политик. */
     @Test void bindsAllFourDefaultRegistriesAndUpdatesTheirMetrics() {
         try (var meters = new ClosingMeterRegistry(); var context = open(null, meters)) {
             assertMetricsReflectActualObjects(registries(context), meters, "defaults");
         }
     }
 
+    /** Пользовательские реестры сохраняются; метрики появляются для старых и новых записей. */
     @Test void bindsAllFourSuppliedRegistriesIncludingExistingAndNewEntries() {
         var registries = Registries.create();
         registries.createEntries("before-context");
@@ -60,6 +64,7 @@ class ResilienceRegistryConfigTest {
         }
     }
 
+    /** Общие реестры двух контекстов не дублируют обработчики; закрытие одного сохраняет метрики другого. */
     @Test void overlappingContextsWithSameRegistryAndMeterBindOnlyOnce() {
         var registries = Registries.create();
         try (var meters = new ClosingMeterRegistry(); var first = open(registries, meters)) {
@@ -79,6 +84,7 @@ class ResilienceRegistryConfigTest {
         }
     }
 
+    /** Разные получатели метрик независимо подключаются к одним политикам и отключаются при закрытии своих контекстов. */
     @Test void sharedRegistriesSupportDifferentMetersWithIndependentContextLifetimes() {
         var registries = Registries.create();
         try (var left = new ClosingMeterRegistry(); var right = new ClosingMeterRegistry();
@@ -94,6 +100,7 @@ class ResilienceRegistryConfigTest {
         }
     }
 
+    /** Повторное открытие контекста не обновляет старые счётчики и не дублирует доставку событий. */
     @Test void closeAndReopenDoesNotRetainOldMetersOrDuplicateEventConsumers() {
         var registries = Registries.create();
         try (var meters = new ClosingMeterRegistry()) {
@@ -120,6 +127,7 @@ class ResilienceRegistryConfigTest {
         }
     }
 
+    /** Удаление и повторное создание политики удаляют старые метрики и публикуют новые. */
     @Test void removalAndReplacementFollowActualRegistryEvents() {
         var registries = Registries.create();
         try (var meters = new ClosingMeterRegistry(); var context = open(registries, meters)) {
@@ -131,6 +139,7 @@ class ResilienceRegistryConfigTest {
         }
     }
 
+    /** Закрытие привязки сохраняет чужие метрики даже после переименования и добавления общих тегов. */
     @Test void lifecycleRemovalPreservesPreexistingMetersAfterCommonTagsAndNameFilters() {
         var registries = Registries.create();
         try (var meters = new ClosingMeterRegistry()) {
@@ -154,6 +163,7 @@ class ResilienceRegistryConfigTest {
         }
     }
 
+    /** Совпадение конечных ID не позволяет одной привязке удалить метрики ещё работающей привязки. */
     @Test void closingOneBindingCannotDeleteAnotherBindingMeterAfterIdCollision() {
         var left = Registries.create();
         var right = Registries.create();
@@ -170,6 +180,7 @@ class ResilienceRegistryConfigTest {
         }
     }
 
+    /** Схлопывание профилей фильтром сохраняет общий счётчик до удаления последней локальной регистрации. */
     @Test void collapsedProfileTagsKeepEachLocalAliasUntilItsOwnRemoval() {
         var registries = Registries.create();
         try (var meters = new ClosingMeterRegistry(); var context = open(registries, meters)) {
@@ -200,6 +211,7 @@ class ResilienceRegistryConfigTest {
         }
     }
 
+    /** Закрытие в окне публикации отсоединяет внешний реестр и счётчик даже у ещё не опубликованной метрики. */
     @Test void contextCloseDuringCompositePublicationDetachesActualRegistryAndMeter() throws Exception {
         var registries = Registries.create();
         var worker = Executors.newSingleThreadExecutor();
@@ -212,6 +224,8 @@ class ResilienceRegistryConfigTest {
             var composite = (CompositeMeterRegistry) field(binding, binding.getClass(), "composite");
             var child = (OwnedMeterRegistry) composite.getRegistries().iterator().next();
             var attachedBeforePublication = new CountDownLatch(1);
+            // Дополнительный обработчик задерживает публикацию после подключения дочернего счётчика,
+            // но до появления родительской метрики в карте CompositeMeterRegistry.
             composite.config().onMeterAdded(metric -> {
                 if (!"successful".equals(metric.getId().getTag("kind"))) return;
                 attachedBeforePublication.countDown();
@@ -227,6 +241,8 @@ class ResilienceRegistryConfigTest {
                 assertTrue(attachedBeforePublication.await(5, TimeUnit.SECONDS));
                 assertTrue(composite.getMeters().isEmpty(), "child is attached before parent meter publication");
                 Meter alias = child.getMeters().getFirst();
+                // При закрытии родитель ещё не видит метрику: отсоединение не должно оставить
+                // ни ссылку на внешний реестр, ни работающий делегат дочернего счётчика.
                 context.close();
                 assertNull(field(child, OwnedMeterRegistry.class, "actual"));
                 Object handler = Proxy.getInvocationHandler(alias);
@@ -246,12 +262,14 @@ class ResilienceRegistryConfigTest {
         }
     }
 
+    /** Считывает закрытое состояние, чтобы проверить отсутствие ссылок после гонки публикации. */
     private static Object field(Object target, Class<?> owner, String name) throws Exception {
         var field = owner.getDeclaredField(name);
         field.setAccessible(true);
         return field.get(target);
     }
 
+    /** Изменяет реальные политики и проверяет, что все четыре вида метрик отражают именно их состояние. */
     private static void assertMetricsReflectActualObjects(Registries registries, MeterRegistry meters, String name) {
         registries.createEntries(name);
         var bulkhead = registries.bulkheads.bulkhead(name);
@@ -281,6 +299,7 @@ class ResilienceRegistryConfigTest {
         return meters.get("resilience4j.timelimiter.calls").tag("name", name).tag("kind", "successful").counter();
     }
 
+    /** Создаёт контекст поверх внешних реестров; их жизненный цикл остаётся у вызывающего кода. */
     private static AnnotationConfigApplicationContext open(Registries registries, MeterRegistry meters) {
         var context = new AnnotationConfigApplicationContext();
         if (registries != null) {
@@ -289,7 +308,7 @@ class ResilienceRegistryConfigTest {
             context.getBeanFactory().registerSingleton("customBreakers", registries.breakers);
             context.getBeanFactory().registerSingleton("customRetries", registries.retries);
         }
-        // These instances belong to the caller; closing a context must only detach its binding.
+        // Эти экземпляры принадлежат вызывающему коду: закрытие контекста освобождает только его привязку метрик.
         context.getBeanFactory().registerSingleton("customMeters", meters);
         context.register(ResilienceRegistryConfig.class);
         context.refresh();

@@ -79,8 +79,8 @@ class ProxyShutdownIntegrationTest {
                         ownedThreads.removeAll(previousThreads);
                         assertFalse(ownedThreads.isEmpty(), "Traffic must have started this application's I/O loop");
 
-                        // Не дожидаемся deadlines обмена. Shutdown обязан сам отменить оба потока
-                        // после короткого grace period; отдельный daemon ограничивает время проверки.
+                        // Не ждём истечения сроков обмена. Остановка приложения должна сама отменить оба
+                        // потока после короткого периода ожидания; фоновый поток ограничивает длительность теста.
                         AtomicReference<Throwable> shutdownFailure = new AtomicReference<>();
                         Thread stopping = Thread.ofPlatform().daemon().name("test-application-shutdown").unstarted(() -> {
                             try { application.close(); }
@@ -92,8 +92,8 @@ class ProxyShutdownIntegrationTest {
                         assertFalse(stopping.isAlive(), "Application shutdown exceeded its bounded test budget");
                         assertNull(shutdownFailure.get());
 
-                        // Backend никогда не отправлял final chunk. Чистый EOF означал бы ложный
-                        // успешный end marker от контейнера после усечения ответа.
+                        // Целевой сервер не отправлял завершающий чанк. Нормальный конец тела означал бы,
+                        // что контейнер ошибочно завершил усечённый ответ как успешный.
                         assertTimeoutPreemptively(Duration.ofSeconds(3), () ->
                                 assertThrows(IOException.class, body::read, "Incomplete chunked response must fail"));
                         assertUploadDidNotSucceed(uploading);
@@ -110,8 +110,8 @@ class ProxyShutdownIntegrationTest {
                     }
                 }
             } finally {
-                // При провале bounded shutdown не входим повторно в тот же lifecycle lock.
-                // Клиентские/fixture sockets закрываются своими finally, помогая завершить teardown.
+                // Если ограниченная по времени остановка не завершилась, не захватываем её блокировку повторно.
+                // Блоки finally закрывают клиентские и тестовые сокеты, помогая завершить очистку.
                 if (stoppingThread.get() == null) application.close();
             }
         }
@@ -120,13 +120,13 @@ class ProxyShutdownIntegrationTest {
     private static void assertUploadDidNotSucceed(Socket socket) throws IOException {
         try {
             String statusLine = line(socket.getInputStream());
-            // Before headers, either an error response or transport close is legitimate.
+            // До отправки заголовков допустимы как HTTP-ошибка, так и закрытие соединения.
             if (statusLine != null) {
                 int status = Integer.parseInt(statusLine.split(" ", 3)[1]);
                 assertTrue(status >= 500 && status <= 599, "Incomplete upload must not succeed: " + statusLine);
             }
         } catch (SocketException connectionClosed) {
-            // Jetty may reset an unread request when stopping the connector.
+            // При остановке коннектора Jetty может сбросить запрос, тело которого ещё не прочитано.
         }
     }
 
@@ -192,9 +192,9 @@ class ProxyShutdownIntegrationTest {
                             .getBytes(StandardCharsets.US_ASCII));
                     socket.getOutputStream().flush();
                 }
-                // No response terminator or application-side close: observe the proxy's actual FIN/RST.
+                // Сервер не завершает ответ и не закрывает сокет сам: проверяем реальный FIN/RST от прокси.
                 try { while (input.read() >= 0) { } }
-                catch (SocketException reset) { /* A reset also proves physical closure. */ }
+                catch (SocketException reset) { /* Сброс соединения также подтверждает физическое закрытие сокета. */ }
                 bothClosed.countDown();
             } finally {
                 sockets.remove(socket);

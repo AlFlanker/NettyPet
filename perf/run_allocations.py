@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small HTTP/1.1 allocation experiment; not a production capacity benchmark."""
+"""Локальное сравнение выделений памяти HTTP/1.1 без оценки предельной нагрузки рабочей среды."""
 import argparse
 import concurrent.futures
 import hashlib
@@ -13,7 +13,7 @@ import subprocess
 import threading
 import time
 
-BODY = bytes(range(256)) * 4096  # One MiB, reused by the external fixture.
+BODY = bytes(range(256)) * 4096  # Один МиБ: внешний стенд использует одно и то же тело во всех запросах.
 DIGEST = hashlib.sha256(BODY).hexdigest()
 TINY_BODY = b"x" * 65536
 TINY_DIGEST = hashlib.sha256(TINY_BODY).hexdigest()
@@ -21,17 +21,22 @@ TINY_CHUNKED = b"1\r\nx\r\n" * len(TINY_BODY) + b"0\r\n\r\n"
 
 
 class Upstream(http.server.BaseHTTPRequestHandler):
+    """Эталонный сервер: отдаёт заданные тела и проверяет целостность загруженных данных."""
+
     protocol_version = "HTTP/1.1"
 
     def log_message(self, *_):
+        """Отключает журнал запросов, чтобы вывод стенда не влиял на локальные задержки."""
         pass
 
     def do_HEAD(self):
+        """Возвращает только заголовки для измерения запроса без тела ответа."""
         self.send_response(200)
         self.send_header("Content-Length", str(len(BODY)))
         self.end_headers()
 
     def do_GET(self):
+        """Отдаёт бинарное тело либо отдельный поток из множества однобайтовых HTTP-фрагментов."""
         self.send_response(200)
         if self.path.startswith("/tiny"):
             self.send_header("Transfer-Encoding", "chunked")
@@ -43,6 +48,7 @@ class Upstream(http.server.BaseHTTPRequestHandler):
         self.wfile.write(BODY)
 
     def do_POST(self):
+        """Проверяет размер и SHA-256 потока загрузки перед успешным ответом без тела."""
         remaining = int(self.headers["Content-Length"])
         digest = hashlib.sha256()
         while remaining:
@@ -59,16 +65,20 @@ class Upstream(http.server.BaseHTTPRequestHandler):
 
 
 class Server(http.server.ThreadingHTTPServer):
+    """Обслуживает соединения параллельно; их потоки не удерживают процесс после остановки."""
+
     daemon_threads = True
 
 
 def free_port():
+    """Находит свободный локальный порт; после закрытия сокета порт не резервируется."""
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
 
 
 def command(control, message):
+    """Отправляет команду измерительному агенту с локальным токеном и читает его JSON-ответ."""
     with socket.create_connection(("127.0.0.1", control["port"]), timeout=15) as sock:
         sock.sendall((control["token"] + " " + message + "\n").encode())
         with sock.makefile("rb") as reply:
@@ -76,9 +86,11 @@ def command(control, message):
 
 
 def batch(port, mode, count, workers):
+    """Выполняет серию запросов, проверяет ответы и собирает локальные задержки и скорость."""
     latencies = []
 
     def work(number):
+        """Повторно использует одно соединение в своём потоке и проверяет каждое тело ответа."""
         connection = http.client.HTTPConnection("127.0.0.1", port, timeout=15)
         samples = []
         try:
@@ -117,6 +129,7 @@ def batch(port, mode, count, workers):
 
 
 def main():
+    """Собирает агент, запускает локальный стенд и измеряет серии после прогрева аллокатора."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--jar", type=Path, required=True)
     parser.add_argument("--java-home", type=Path, default=os.environ.get("JAVA_HOME"), required="JAVA_HOME" not in os.environ)
@@ -181,7 +194,7 @@ def main():
                    "workers": args.workers, "bodyBytes": len(BODY), "tinyBodyBytes": len(TINY_BODY), "heapBytes": 256 * 1024 * 1024,
                    "method": "ThreadMXBean deltas of live threads; control thread excluded; JFR allocation sample weights are estimates; local HTTP fixture is not a production benchmark",
                    "phases": {}}
-        # Separate first-touch slab evidence from post-warmup allocation comparisons.
+        # Первое выделение крупных буферов записываем отдельно от сравнений после прогрева.
         command(control, "START allocator-warmup")
         for mode in ["head", "upload", "download", "tiny"]:
             batch(port, mode, args.workers * 2, args.workers)

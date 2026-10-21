@@ -26,9 +26,11 @@ import java.util.function.Supplier;
 import static org.junit.jupiter.api.Assertions.*;
 
 @Timeout(10)
+/** Проверяет сохранение Reactor Context в подписках, повторных попытках и резервной обработке ошибок. */
 class ReactorContextRegressionTest {
     private static final String TRACE = "traceId";
 
+    /** Один возвращённый Mono захватывает контекст заново для каждого подписчика. */
     @Test void reusablePublisherCapturesContextSeparatelyForEverySubscription() {
         try (Fixture f = new Fixture(policy(false))) {
             AtomicInteger factories = new AtomicInteger();
@@ -44,6 +46,7 @@ class ReactorContextRegressionTest {
         }
     }
 
+    /** Параллельные подписчики сохраняют разные контексты при асинхронном завершении источников. */
     @Test void concurrentSubscribersKeepDistinctContextsAcrossAsynchronousSourceSignals() throws Exception {
         try (Fixture f = new Fixture(policy(false))) {
             CountDownLatch subscribed = new CountDownLatch(2);
@@ -64,6 +67,7 @@ class ReactorContextRegressionTest {
         }
     }
 
+    /** Повторы наследуют контекст своей подписки, не перенося его в следующую подписку. */
     @Test void retryAttemptsInheritTheSameContextWithoutLeakingIntoTheNextSubscription() {
         try (Fixture f = new Fixture(policy(true))) {
             AtomicInteger attempts = new AtomicInteger();
@@ -80,6 +84,7 @@ class ReactorContextRegressionTest {
         }
     }
 
+    /** Синхронная ошибка фабрики не лишает резервный источник контекста подписчика. */
     @Test void fallbackRetainsContextWhenSourceFactoryThrowsSynchronously() {
         try (Fixture f = new Fixture(policy(false))) {
             var publisher = f.command(() -> { throw new IllegalArgumentException("factory"); },
@@ -90,6 +95,7 @@ class ReactorContextRegressionTest {
         }
     }
 
+    /** Обработка таймаута на потоке планировщика сохраняет контекст в резервном источнике. */
     @Test void fallbackRetainsContextWhenTheTotalDeadlineExpiresOnTheTimerThread() {
         var properties = policy(false).toBuilder().timeout(Duration.ofMillis(80)).build();
         try (Fixture f = new Fixture(properties)) {
@@ -101,6 +107,7 @@ class ReactorContextRegressionTest {
         }
     }
 
+    /** После исчерпания повторов на рабочем потоке резервная обработка видит исходный контекст. */
     @Test void fallbackRetainsContextAfterRetriesAreExhaustedOnTheRetryWorker() {
         try (Fixture f = new Fixture(policy(true))) {
             List<String> seen = new CopyOnWriteArrayList<>();
@@ -114,6 +121,7 @@ class ReactorContextRegressionTest {
         }
     }
 
+    /** Резервная обработка ресурсной команды использует контекст внешней Reactor-подписки. */
     @Test void resourceCommandFallbackStillUsesTheReactorSubscribersContext() {
         try (Fixture f = new Fixture(policy(false))) {
             var publisher = new AbstractResourceCommand<String>(f.decorator, f.properties) {

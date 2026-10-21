@@ -20,8 +20,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import reactor.core.publisher.Mono;
 
 /**
- * One incoming request is a single-use resource command. Subscription starts I/O only
- * after admission; the task's completion confirms that the entire exchange is cleaned up.
+ * Представляет один входящий запрос как одноразовую ресурсную команду. Подписка запускает
+ * I/O только после допуска лимитерами; completion задачи подтверждает очистку всего обмена.
  */
 public final class ProxyRequestCommand extends AbstractResourceCommand<ProxyResult> {
     private final ProxyEngine engine;
@@ -43,16 +43,24 @@ public final class ProxyRequestCommand extends AbstractResourceCommand<ProxyResu
 
     @Override protected String getCommandName() { return ProxyCommands.NAME; }
 
+    /** Передаёт ошибку HTTP-обработчику без записи резервного тела в Servlet-ответ. */
     @Override protected Mono<ProxyResult> fallbackOnError(Throwable failure) {
-        // Before handoff the HTTP adapter maps this failure. After handoff only the
-        // transport may complete or abort the response; no replacement body is written.
+        // До передачи запроса транспорту отказ преобразует HTTP-обработчик. После передачи
+        // только транспорт завершает или прерывает ответ; подменять его тело здесь нельзя.
         return Mono.error(failure);
     }
 
+    /**
+     * Однократно передаёт запрос транспорту после допуска команды. Сигнал completion
+     * появляется после освобождения ресурсов; локальные исходы превращаются в исключения,
+     * чтобы политика CircuitBreaker могла отличить их от отказов целевого сервера.
+     */
     @Override protected CommandTask<ProxyResult> doStart() throws IOException {
         if (!invoked.compareAndSet(false, true)) throw new IllegalStateException("Command is single-use");
         ProxyCall call = engine.forwardAsync(request, response, rawPath);
         handedToProxy = true;
+        // HTTP-ошибки целевого сервера остаются ProxyResult для проверки recordResult.
+        // Исключения обозначают локальный отказ, отмену или общий срок обмена.
         CompletionStage<ProxyResult> completion = call.completion().thenCompose(result -> switch (result.outcome()) {
             case CANCELLED -> CompletableFuture.failedFuture(new CommandCancelledException("Client/exchange cancelled"));
             case LOCAL_REJECTION -> CompletableFuture.failedFuture(new CommandNotExecutedException("Proxy rejected locally"));
@@ -62,11 +70,12 @@ public final class ProxyRequestCommand extends AbstractResourceCommand<ProxyResu
         return new CommandTask<>() {
             @Override public CompletionStage<ProxyResult> completion() { return completion; }
             @Override public void cancel(CancellationReason reason) {
-                // Transport serializes completion with its I/O; the timer thread never writes HTTP.
+                // Транспорт выполняет отмену на потоке обмена; поток таймера не обращается к HTTP-ответу.
                 call.cancel(reason == CancellationReason.TIMEOUT ? 504 : 503);
             }
         };
     }
 
+    /** Показывает, что forwardAsync() вернулся и HTTP-обработчик больше не должен писать ответ. */
     public boolean handedToProxy() { return handedToProxy; }
 }

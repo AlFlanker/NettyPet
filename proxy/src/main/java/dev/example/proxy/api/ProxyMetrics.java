@@ -6,13 +6,13 @@ import java.util.concurrent.atomic.LongAdder;
 /**
  * Агрегированные метрики одного экземпляра прокси, без привязки к системе мониторинга.
  *
- * <p>Набор счётчиков фиксирован: здесь нет меток URI, клиента или upstream, поэтому
- * разнообразие запросов не увеличивает кардинальность метрик. Транспорт обновляет
+ * <p>Набор счётчиков фиксирован: здесь нет меток URI, клиента или целевого сервера, поэтому
+ * разнообразие запросов не увеличивает число временных рядов метрик. Транспорт обновляет
  * статистику один раз при допуске/отказе и один раз при завершении обмена, а не на
- * каждом переданном chunk. Сброс счётчиков не предусмотрен.</p>
+ * каждом переданном фрагменте тела. Сброс счётчиков не предусмотрен.</p>
  *
  * <p>Методы потокобезопасны, но не обеспечивают идемпотентность: владелец обмена
- * должен вызывать {@link #finished} ровно один раз из своего terminal transition.</p>
+ * должен вызывать {@link #finished} ровно один раз при окончательном завершении.</p>
  */
 public final class ProxyMetrics {
     private final LongAdder admitted = new LongAdder();
@@ -25,14 +25,14 @@ public final class ProxyMetrics {
     private final LongAdder totalDurationNanos = new LongAdder();
     private final AtomicLong maxQueuedResponseBytes = new AtomicLong();
 
-    /** Учесть получение admission permit, включая последующее ожидание пула. */
+    /** Учитывает получение разрешения на обмен, включая последующее ожидание свободного канала. */
     public void admitted() {
         admitted.increment();
     }
 
     /**
-     * Учесть отказ до запуска async-обмена: перегрузку, запрет Processor или ошибку
-     * подготовки. Такой запрос уже мог получить permit, поэтому admitted и rejected
+     * Учитывает отказ до запуска асинхронного обмена: перегрузку, запрет процессора
+     * или ошибку подготовки. Запрос уже мог получить разрешение, поэтому admitted и rejected
      * не являются непересекающимися категориями. HTTP 5xx также учитывается в failed.
      */
     public void rejected(int status) {
@@ -41,23 +41,23 @@ public final class ProxyMetrics {
     }
 
     /**
-     * Учесть завершение async-обмена, в том числе ошибку или отмену клиентом.
-     * completed означает все terminal transitions, cancelled — отменённую часть
+     * Учитывает завершение асинхронного обмена, в том числе ошибку или отмену клиентом.
+     * completed означает все завершённые обмены, cancelled — отменённую часть
      * этих обменов. failed — общий счётчик 5xx, включая также {@link #rejected}.
      *
      * @param status итоговый HTTP-статус; 0, если при отмене статус не был определён
      * @param wasCancelled обмен прекратился из-за отмены/завершения со стороны контейнера
-     * @param uploadedBytes байты, прочитанные из входящего Servlet stream
-     * @param downloadedBytes байты, переданные выходящему Servlet stream; это не TCP ACK
+     * @param uploadedBytes байты, прочитанные из входящего потока Servlet
+     * @param downloadedBytes байты, переданные выходящему потоку Servlet; не подтверждение доставки TCP
      * @param durationNanos полная длительность обмена по монотонным часам
-     * @param peakQueuedBytes максимальное число payload-байтов в очереди ответа этого обмена
+     * @param peakQueuedBytes максимальный объём полезных данных в очереди ответа этого обмена
      */
     public void finished(int status, boolean wasCancelled, long uploadedBytes,
                          long downloadedBytes, long durationNanos, long peakQueuedBytes) {
         completed.increment();
         if (wasCancelled) cancelled.increment();
         if (status >= 500) failed.increment();
-        // Телеметрия не должна прерывать cleanup. Некорректная отрицательная величина
+        // Телеметрия не должна прерывать очистку ресурсов. Некорректная отрицательная величина
         // не уменьшает накопительный счётчик и не превращает завершение в исключение.
         totalUploadBytes.add(Math.max(0, uploadedBytes));
         totalDownloadBytes.add(Math.max(0, downloadedBytes));
@@ -68,8 +68,8 @@ public final class ProxyMetrics {
     /**
      * Снимок для адаптера Micrometer/JMX/другой системы мониторинга. При параллельных
      * обновлениях поля могут относиться к слегка разным моментам времени: LongAdder
-     * не создаёт глобальную блокировку всех event loops. После остановки writers
-     * значения точны. Нельзя вычислять текущий admission gauge вычитанием этих полей.
+     * не блокирует все циклы ввода-вывода Netty. После остановки обновляющих потоков
+     * значения точны. Текущее число занятых разрешений нельзя вычислять вычитанием этих полей.
      */
     public Snapshot snapshot() {
         return new Snapshot(admitted.sum(), rejected.sum(), completed.sum(), cancelled.sum(),

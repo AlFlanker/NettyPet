@@ -42,7 +42,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Real sockets and the real embedded Jetty: mocks cannot verify non-blocking I/O. */
+/** Проверяет неблокирующий I/O через настоящие сокеты и встроенный Jetty. */
 @Timeout(15)
 class ProxyIntegrationTest {
     private static HttpServer upstream;
@@ -76,7 +76,7 @@ class ProxyIntegrationTest {
                         "--proxy.allowed-origins[0]=http://127.0.0.1:" + rawUpstream.getLocalPort(),
                         "--proxy.exchange-timeout=2s", "--proxy.io-threads=2",
                         "--spring.main.banner-mode=off");
-        // Spring Boot 4 moved web-server packages; only the public context contract matters here.
+        // В Spring Boot 4 изменились пакеты веб-сервера; тест использует публичный контракт контекста.
         Object webServer = application.getClass().getMethod("getWebServer").invoke(application);
         port = (int) webServer.getClass().getMethod("getPort").invoke(webServer);
         client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3))
@@ -309,7 +309,7 @@ class ProxyIntegrationTest {
             if (path.equals("/")) {
                 respond(exchange, 200, "root|" + exchange.getRequestURI().toASCIIString());
             } else if (path.equals("/echo")) {
-                // Reading all bytes is deliberately confined to the test upstream.
+                // Полное чтение тела допустимо только в этом тестовом целевом сервере, не в прокси.
                 byte[] body = exchange.getRequestBody().readAllBytes();
                 respond(exchange, 200, body);
             } else if (path.startsWith("/inspect")) {
@@ -367,10 +367,10 @@ class ProxyIntegrationTest {
             BufferedInputStream request = new BufferedInputStream(socket.getInputStream());
             String requestLine = line(request);
             for (String header; (header = line(request)) != null && !header.isEmpty(); ) {
-                // Consume the request headers only. This endpoint receives a bodyless GET.
+                // Читаем только заголовки: этот маршрут получает GET без тела.
             }
             if (requestLine != null && requestLine.contains(" /tiny-chunks ")) {
-                // About 12 KiB on the wire, but 2000 individually decoded HttpContent objects.
+                // Около 12 КиБ сетевых данных декодируются в 2000 отдельных объектов HttpContent.
                 socket.getOutputStream().write(("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n"
                         + "Connection: close\r\n\r\n" + "1\r\nx\r\n".repeat(2000) + "0\r\n\r\n")
                         .getBytes(StandardCharsets.US_ASCII));
@@ -382,9 +382,9 @@ class ProxyIntegrationTest {
                     .getBytes(StandardCharsets.US_ASCII));
             socket.getOutputStream().flush();
             await(truncateGate.get());
-            // Deliberately omit the mandatory zero-size final chunk and close the socket.
+            // Намеренно закрываем сокет без обязательного завершающего чанка нулевой длины.
         } catch (IOException ignored) {
-            // Teardown may close the listener when another test failed first.
+            // Очистка теста может закрыть слушающий сокет после более ранней ошибки проверки.
         }
     }
 

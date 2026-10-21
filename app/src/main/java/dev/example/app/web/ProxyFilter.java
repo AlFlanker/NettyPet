@@ -14,6 +14,10 @@ public final class ProxyFilter implements Filter {
 
     public ProxyFilter(ProxyRequestHandler handler) { this.handler = Objects.requireNonNull(handler); }
 
+    /**
+     * Передаёт точный путь /proxy и его дочерние пути команде, удаляя только этот префикс.
+     * Остальные запросы продолжают цепочку приложения; путь и query дополнительно не декодируются.
+     */
     @Override public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
             throws IOException, ServletException {
         if (request instanceof HttpServletRequest http && response instanceof HttpServletResponse outgoing) {

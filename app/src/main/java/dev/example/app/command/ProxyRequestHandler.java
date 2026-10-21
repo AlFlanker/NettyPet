@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.TimeoutException;
 
-/** The HTTP-specific rejection mapping stays outside the reusable command module. */
+/** Преобразует отказы команды в HTTP-ответ до передачи запроса транспорту. */
 public final class ProxyRequestHandler {
     private final ProxyEngine engine;
     private final ProxyCommands commands;
@@ -24,34 +24,42 @@ public final class ProxyRequestHandler {
         this.commands = commands;
     }
 
+    /**
+     * Запускает защищённую команду на потоке Servlet. После передачи владения ответом
+     * транспорту только он завершает обмен; при отказе до передачи формируется пустой HTTP-ответ.
+     *
+     * @param rawPath исходный путь после удаления префикса маршрута прокси
+     */
     public void forward(HttpServletRequest request, HttpServletResponse response, String rawPath) throws IOException {
         var command = commands.command(engine, request, response, rawPath);
         var failure = new AtomicReference<Throwable>();
         var finished = new AtomicBoolean();
-        // Intentionally subscribe on this Servlet thread. Before returning from the
-        // filter the source must have entered startAsync or rejected synchronously.
+        // Подписываемся на том же потоке Servlet: до возврата из фильтра транспорт должен
+        // вызвать startAsync(), либо команда должна синхронно завершиться отказом.
         command.execute().subscribe(ignored -> { }, failure::set, () -> finished.set(true));
         Throwable rejected = unwrap(failure.get());
-        // Reactor delivers non-JVM-fatal Errors such as AssertionError through onError.
-        // The transport may already have started async and aborted before its start call
-        // threw, so these must escape before any response access or ownership decision.
+        // Reactor передаёт некоторые Error, например AssertionError, через onError. Транспорт
+        // мог уже вызвать startAsync() и прервать обмен перед выбросом ошибки. Пробрасываем
+        // Error до проверки владельца и обращения к response: объект уже может быть завершён.
         if (rejected instanceof Error fatal) throw fatal;
         if (command.handedToProxy()) return;
         if (failure.get() == null && !finished.get()) {
             throw new IllegalStateException("Command returned without starting or rejecting");
         }
-        // The transport never took ownership, so this adapter owns the rejection.
+        // Транспорт не принял запрос; только в этом случае обработчик сам формирует HTTP-отказ.
         response.setStatus(rejected == null ? 500 : rejectionStatus(rejected));
         response.setHeader("Connection", "close");
         response.setContentLength(0);
     }
 
+    /** Снимает обёртки CompletionException, ограничивая глубину обхода цепочки причин. */
     private static Throwable unwrap(Throwable failure) {
         for (int depth = 0; failure instanceof CompletionException && failure.getCause() != null && depth < 16; depth++)
             failure = failure.getCause();
         return failure;
     }
 
+    /** Выбирает код отказа до запуска транспорта: 504 для таймаута, 503 для недопуска, иначе 500. */
     private static int rejectionStatus(Throwable failure) {
         if (failure instanceof TimeoutException) return 504;
         if (failure instanceof BulkheadFullException || failure instanceof CallNotPermittedException

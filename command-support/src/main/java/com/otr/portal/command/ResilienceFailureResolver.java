@@ -17,6 +17,10 @@ import java.util.concurrent.TimeoutException;
 @UtilityClass
 public final class ResilienceFailureResolver {
 
+    /**
+     * Ищет ближайшую распознанную причину в цепочке исключений.
+     * Для null, неизвестной причины или исчерпания безопасной глубины возвращает OTHER.
+     */
     public static ResilienceFailureKind resolve(Throwable error) {
         Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         for (int depth = 0; error != null && depth < 64 && seen.add(error); depth++, error = error.getCause()) {

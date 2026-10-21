@@ -11,6 +11,7 @@ import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
+/** Проверяет неизменность именованных политик и запрет их удаления до освобождения всех ссылок. */
 class CommandConfigRegistryTest {
     final BulkheadRegistry bulkheads = BulkheadRegistry.ofDefaults();
     final TimeLimiterRegistry timers = TimeLimiterRegistry.ofDefaults();
@@ -22,6 +23,7 @@ class CommandConfigRegistryTest {
         return new CommandContext(name, CommandProperties.defaultProperties());
     }
 
+    /** Повторное закрытие ссылки не освобождает чужую операцию и не меняет поколение действующей политики. */
     @Test void leaseKeepsPolicyGenerationStableAndCannotBeClosedTwice() {
         var first = registry.acquire(context("first"));
         var second = registry.acquire(context("first"));
@@ -36,6 +38,7 @@ class CommandConfigRegistryTest {
         try (var next = registry.acquire(context("first"))) { assertNotSame(old, next.holder()); }
     }
 
+    /** Очистка либо отклоняется целиком при занятой политике, либо удаляет только записи этого реестра. */
     @Test void clearingIsAtomicAndDoesNotRemoveUnmanagedPolicies() {
         bulkheads.bulkhead("external");
         try (var ignored = registry.acquire(context("owned-idle"))) { }
@@ -52,6 +55,7 @@ class CommandConfigRegistryTest {
         assertTrue(bulkheads.find("external").isPresent());
     }
 
+    /** Новое описание того же имени допускается только после явного удаления неиспользуемой политики. */
     @Test void rejectsPolicyChangesUntilIdlePolicyIsExplicitlyCleared() {
         var oldContext = context("policy");
         try (var ignored = registry.acquire(oldContext)) { }
@@ -63,6 +67,7 @@ class CommandConfigRegistryTest {
         }
     }
 
+    /** Создаёт лимитеры с заданными параметрами и отклоняет попытку занять имя внешней политики. */
     @Test void createsConfiguredPoliciesWithoutReplacingExternalEntries() {
         var cbConfig = CircuitBreakerConfig.custom().minimumNumberOfCalls(2).slidingWindowSize(3).build();
         var properties = CommandProperties.builder().maxConcurrency(7).timeout(Duration.ofMillis(250))
@@ -79,6 +84,7 @@ class CommandConfigRegistryTest {
         assertThrows(IllegalStateException.class, () -> registry.acquire(context("external")));
     }
 
+    /** Некорректные имена, контексты и префиксы отклоняются до обращения к политике. */
     @Test void rejectsInvalidContextsAndPrefix() {
         assertThrows(IllegalArgumentException.class, () -> context(" "));
         assertThrows(NullPointerException.class, () -> new CommandContext("name", null));

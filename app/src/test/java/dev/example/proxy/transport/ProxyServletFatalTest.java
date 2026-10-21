@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-/** Uses the real facade's startAsync/abort path, not a mocked ProxyEngine failure. */
+/** Проверяет startAsync() и аварийное прерывание настоящего ProxyEngine при ошибке запуска. */
 class ProxyServletFatalTest {
     @Test
     void failureAfterStartAsyncAbortsAndPropagatesOriginalErrorWithoutWritingResponse() throws Exception {

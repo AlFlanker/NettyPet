@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Timeout;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/** Проверяет накопление метрик, обработку отмены и устойчивость счётчиков к некорректным измерениям. */
 class ProxyMetricsTest {
     @Test
     void distinguishesAdmissionRejectionAndCompletedOutcomes() {

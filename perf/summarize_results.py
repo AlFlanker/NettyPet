@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Produce a compact comparison without machine-local paths or control tokens."""
+"""Готовит компактное сравнение без локальных путей и токенов доступа к управляющему каналу."""
 import argparse
 import json
 from pathlib import Path
 
 
 def compact_run(raw):
+    """Оставляет параметры запуска, измеренные дельты и свидетельства JFR для сравнения."""
     result = {key: raw[key] for key in
               ("label", "jarSha256", "javaVersion", "workers", "bodyBytes", "tinyBodyBytes", "heapBytes")}
     warmup = raw["allocatorWarmup"]
@@ -30,6 +31,7 @@ def compact_run(raw):
 
 
 def compare(baseline, candidate):
+    """Проверяет сопоставимость настроек и числа запросов; вычисляет изменение выделений на запрос."""
     for setting in ("javaVersion", "workers", "bodyBytes", "tinyBodyBytes", "heapBytes"):
         if baseline[setting] != candidate[setting]:
             raise ValueError("Non-comparable setting: " + setting)
@@ -47,6 +49,7 @@ def compare(baseline, candidate):
 
 
 def main():
+    """Читает отчёты запусков и сохраняет сравнение с ограничениями метода измерения."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)

@@ -5,10 +5,10 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /**
- * One monotonic budget and cancellation winner for a logical command, including
- * admission, attempts and retry backoff. Gates are checked on the thread doing
- * the work, so a delayed timeout scheduler cannot authorize an expired attempt
- * or turn a late completion into success.
+ * Общее состояние срока и отмены одной команды, включая допуск, попытки и паузы между ними.
+ * Время измеряется монотонными часами. Проверка выполняется на потоке, который запускает
+ * попытку или принимает результат: задержка планировщика не разрешает просроченную
+ * попытку и не превращает поздний результат в успех.
  */
 public final class CommandScope {
     private final long startedAt = System.nanoTime();
@@ -22,7 +22,7 @@ public final class CommandScope {
         this.onCancellation = Objects.requireNonNull(onCancellation, "onCancellation");
     }
 
-    /** Validates public executor configurations before any execution resources are retained. */
+    /** Проверяет представимость бюджета до создания таймера и захвата ресурсов выполнения. */
     static long validateTimeout(Duration timeout) {
         Objects.requireNonNull(timeout, "timeout");
         final long nanos;
@@ -35,17 +35,24 @@ public final class CommandScope {
         return nanos;
     }
 
-    /** Returns the remaining total budget; it never resets for a retry. */
+    /** Возвращает остаток общего бюджета; новая попытка не начинает отсчёт заново. */
     public long remainingNanos() {
         return timeoutNanos - (System.nanoTime() - startedAt);
     }
 
-    /** Gate immediately before beginning any attempt or accepting an intermediate result. */
+    /**
+     * Проверяет срок и отмену перед началом попытки или обработкой её промежуточного результата.
+     * При первом обнаружении истёкшего срока фиксирует TIMEOUT и вызывает обработчик отмены.
+     */
     public boolean isActive() { return gate(false); }
 
-    /** Atomically selects the logical terminal result if it is still within the budget. */
+    /** Разрешает принять итоговый результат, только если срок не истёк и отмена ещё не победила. */
     boolean tryComplete() { return gate(true); }
 
+    /**
+     * Под одним монитором выбирает между допустимой работой, итогом и истечением срока.
+     * Уведомляет об отмене вне монитора, чтобы обратный вызов не удерживал блокировку состояния.
+     */
     private boolean gate(boolean complete) {
         boolean expired = false;
         synchronized (this) {
@@ -63,7 +70,7 @@ public final class CommandScope {
         return false;
     }
 
-    /** First terminal/cancellation decision wins, including simultaneous timeout and shutdown. */
+    /** Фиксирует первую причину отмены; уже выбранный результат или другая отмена не заменяются. */
     public void cancel(CancellationReason reason) {
         Objects.requireNonNull(reason, "reason");
         synchronized (this) {

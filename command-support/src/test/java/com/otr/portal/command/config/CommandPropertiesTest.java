@@ -7,7 +7,9 @@ import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
+/** Проверяет ограничения параметров команды до её запуска и сохранение правил CircuitBreaker. */
 class CommandPropertiesTest {
+    /** Несколько попыток разрешаются только при явном подтверждении повторяемости операции. */
     @Test void retryRequiresExplicitReplayability() {
         var defaults = CommandProperties.defaultProperties();
         assertEquals(1, defaults.getMaxAttempts());
@@ -16,6 +18,7 @@ class CommandPropertiesTest {
         assertEquals(2, CommandProperties.builder().maxAttempts(2).replayable(true).build().getMaxAttempts());
     }
 
+    /** Недопустимые сроки и параллелизм отклоняются при построении параметров. */
     @Test void invalidTimeAndConcurrencyCannotReachExecution() {
         assertThrows(IllegalArgumentException.class, () -> CommandProperties.builder().timeout(Duration.ZERO).build());
         assertThrows(IllegalArgumentException.class, () -> CommandProperties.builder().timeout(Duration.ofNanos(1)).build());
@@ -30,6 +33,7 @@ class CommandPropertiesTest {
         assertThrows(NullPointerException.class, () -> CommandProperties.builder().circuitBreakerConfig(null).build());
     }
 
+    /** Пользовательская конфигурация CircuitBreaker и её правила оценки результата сохраняются без подмены. */
     @Test void perCommandCircuitBreakerConfigAndPredicatesArePreserved() {
         CircuitBreakerConfig config = CircuitBreakerConfig.custom()
                 .minimumNumberOfCalls(3).slidingWindowSize(7).failureRateThreshold(75)
@@ -41,6 +45,7 @@ class CommandPropertiesTest {
         assertEquals(CommandProperties.defaultProperties(), CommandProperties.defaultProperties());
     }
 
+    /** Стандартная политика исключает локальную отмену из статистики, но учитывает таймаут как ошибку. */
     @Test void defaultBreakerIgnoresLocalCancellationButRecordsTimeout() {
         var config = CommandProperties.defaultProperties().getCircuitBreakerConfig();
         assertTrue(config.getIgnoreExceptionPredicate().test(new CommandCancelledException("cancelled")));

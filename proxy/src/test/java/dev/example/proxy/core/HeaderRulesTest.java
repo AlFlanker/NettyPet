@@ -7,6 +7,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/** Проверяет удаление служебных HTTP-полей без потери повторных значений и изменения исходного набора. */
 class HeaderRulesTest {
     @Test
     void removesEveryConnectionTokenAcrossMultipleHeaderLines() {
@@ -24,7 +25,7 @@ class HeaderRulesTest {
         Headers result = HeaderRules.request(source);
         assertEquals(java.util.Map.of("x-application", List.of("keep")), result.asMap());
         assertEquals(result.asMap(), HeaderRules.requestSnapshot(source));
-        assertEquals("old.example", source.first("Host")); // copying does not mutate caller
+        assertEquals("old.example", source.first("Host")); // Копирование не меняет исходные заголовки.
     }
 
     @Test

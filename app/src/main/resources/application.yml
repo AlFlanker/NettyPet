@@ -1,6 +1,6 @@
 spring:
   jmx:
-    # Только локальный MBeanServer. Удалённый connector/HTTP management здесь не включается.
+    # Включает локальный MBeanServer; удалённый JMX-коннектор и HTTP-мониторинг не создаются.
     enabled: true
     unique-names: true
 server:
@@ -23,7 +23,7 @@ proxy:
   idle-connection-timeout: 30s
   allowed-origins: []
 
-# Политика команд компонуется в app; transport proxy о ней не знает.
+# Приложение настраивает политику команд; транспорт прокси от неё не зависит.
 proxy-command:
   timeout: 30s
   max-concurrent: 128

@@ -38,7 +38,7 @@ import org.springframework.core.Ordered;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Real sockets cover the native writer and its conservative Servlet-wrapper fallback. */
+/** Проверяет через сокеты запись Jetty и переносимый путь для обёрток Servlet-ответа. */
 @Timeout(25)
 class ProxyOptimizedIoIntegrationTest {
     private static final int BLOCK = 8192;
@@ -59,9 +59,9 @@ class ProxyOptimizedIoIntegrationTest {
                 assertTrue(readHeaders(stalled.getInputStream()).startsWith("HTTP/1.1 200"));
                 assertEquals(Byte.toUnsignedInt(pattern(0, 11)), stalled.getInputStream().read());
 
-                // Stop consuming downstream while the upstream attempts a bounded multi-MiB stream.
-                // Exact kernel-buffer occupancy is intentionally not an assertion: deterministic
-                // pending-write/ref-count tests cover that ownership boundary separately.
+                // Останавливаем чтение клиента, пока сервер передаёт ограниченное тело в несколько МиБ.
+                // Размер заполнения буферов ОС здесь не проверяем: владение памятью при ожидающей
+                // записи отдельно проверяют детерминированные тесты счётчиков ссылок.
                 f.sendRemaining.countDown();
                 assertTrue(f.largeTransferStarted.await(3, TimeUnit.SECONDS));
                 await().during(Duration.ofMillis(250)).atMost(Duration.ofSeconds(1)).untilAsserted(() -> {
@@ -74,7 +74,7 @@ class ProxyOptimizedIoIntegrationTest {
             f.awaitReleased();
             assertTrue(f.largeHandlerFinished.await(3, TimeUnit.SECONDS), "Cancellation must unblock the upstream writer");
 
-            // A different pattern detects stale/prematurely-recycled content from the aborted call.
+            // Другой шаблон байтов выявляет данные из буфера, преждевременно возвращённого в пул отменённым обменом.
             HttpResponse<InputStream> recovered = f.client.send(f.request("/binary"),
                     HttpResponse.BodyHandlers.ofInputStream());
             assertEquals(200, recovered.statusCode());
@@ -147,8 +147,8 @@ class ProxyOptimizedIoIntegrationTest {
                                     @Override public void setWriteListener(WriteListener listener) { delegate.setWriteListener(listener); }
                                     @Override public void write(int value) throws IOException { delegate.write(value ^ WRAPPER_XOR); }
                                     @Override public void write(byte[] bytes, int offset, int length) throws IOException {
-                                        // A wrapper owns its transformation buffer until the delegate's
-                                        // write completes; do not mutate the proxy's supplied array.
+                                        // Обёртка удерживает буфер преобразования до завершения записи делегата;
+                                        // менять исходный массив, переданный прокси, нельзя.
                                         byte[] transformed = new byte[length];
                                         for (int i = 0; i < length; i++) transformed[i] = (byte) (bytes[offset + i] ^ WRAPPER_XOR);
                                         delegate.write(transformed);
@@ -230,8 +230,8 @@ class ProxyOptimizedIoIntegrationTest {
                 byte[] block = new byte[BLOCK];
                 int length = large ? LARGE_BODY : RECOVERY_BODY;
                 int seed = large ? 11 : 93;
-                // One additional byte keeps the first response incomplete even if the OS
-                // unexpectedly buffers every preceding byte before the client's reset.
+                // Дополнительный байт оставляет первый ответ незавершённым, даже если ОС успеет
+                // поместить все предыдущие байты в буфер до сброса соединения клиентом.
                 exchange.sendResponseHeaders(200, large ? length + 1L : length);
                 int offset = 0;
                 while (offset < length) {
@@ -251,7 +251,7 @@ class ProxyOptimizedIoIntegrationTest {
                 }
             } catch (IOException failure) {
                 if (!large) throw failure;
-                // Expected when the stopped downstream resets and the proxy closes upstream.
+                // Ожидаемый исход: клиент сбросил соединение, после чего прокси закрыл сокет целевого сервера.
             } finally {
                 if (large) largeHandlerFinished.countDown();
             }

@@ -18,6 +18,7 @@ import java.util.function.Predicate;
 public final class Headers {
     private final Map<String, List<String>> values = new LinkedHashMap<>();
 
+    /** Создаёт изменяемую копию, проверяя имена и каждое значение полей исходной карты. */
     public static Headers copyOf(Map<String, List<String>> source) {
         var headers = new Headers();
         source.forEach((name, entries) -> entries.forEach(value -> headers.add(name, value)));
@@ -25,7 +26,7 @@ public final class Headers {
     }
 
     /**
-     * Проверенный immutable-снимок без промежуточных Headers и изменяемых списков.
+     * Создаёт проверенный неизменяемый снимок без промежуточных Headers и изменяемых списков.
      * Разные написания одного имени объединяются в порядке обхода исходной карты.
      */
     static Map<String, List<String>> immutableCopyOf(Map<String, List<String>> source) {
@@ -53,6 +54,7 @@ public final class Headers {
         return copy;
     }
 
+    /** Заменяет все значения поля одним проверенным значением. */
     public Headers set(String name, String value) {
         String key = normalizeName(name);
         validateValue(value);
@@ -62,6 +64,7 @@ public final class Headers {
         return this;
     }
 
+    /** Добавляет отдельное значение поля, сохраняя порядок повторяющихся значений. */
     public Headers add(String name, String value) {
         String key = normalizeName(name);
         validateValue(value);
@@ -78,6 +81,7 @@ public final class Headers {
         return values.containsKey(normalizeName(name));
     }
 
+    /** Возвращает неизменяемую копию значений либо пустой список, если поля нет. */
     public List<String> get(String name) {
         List<String> entries = values.get(normalizeName(name));
         return entries == null ? List.of() : List.copyOf(entries);
@@ -95,8 +99,8 @@ public final class Headers {
     }
 
     /**
-     * Immutable-снимок выбранных полей за один проход. Predicate получает только
-     * нормализованное имя; во время обхода нельзя изменять этот экземпляр Headers.
+     * Создаёт неизменяемый снимок выбранных полей за один проход. Условие отбора
+     * получает нормализованное имя; изменять Headers во время обхода нельзя.
      */
     public Map<String, List<String>> asMap(Predicate<String> include) {
         Objects.requireNonNull(include, "include");
@@ -108,8 +112,8 @@ public final class Headers {
     }
 
     /**
-     * Обход для немедленной записи заголовков без создания snapshot map/list.
-     * Callback видит только неизменяемые строки; изменять Headers во время обхода нельзя.
+     * Передаёт каждое имя и значение обработчику без создания снимка карты и списков.
+     * Обработчик получает неизменяемые строки; изменять Headers во время обхода нельзя.
      */
     public void forEachValue(BiConsumer<String, String> consumer) {
         Objects.requireNonNull(consumer, "consumer");
@@ -118,7 +122,7 @@ public final class Headers {
         });
     }
 
-    /** Проверяет HTTP token и возвращает имя в каноническом нижнем регистре. */
+    /** Проверяет допустимость символов имени HTTP-поля и возвращает имя в нижнем регистре. */
     public static String canonicalName(String name) { return normalizeName(name); }
 
     private static String normalizeName(String name) {
@@ -136,7 +140,7 @@ public final class Headers {
 
     private static void validateValue(String value) {
         Objects.requireNonNull(value, "header value");
-        // CR/LF и управляющие символы нельзя пропускать в HTTP encoder: это граница
+        // CR/LF и управляющие символы нельзя передавать кодировщику HTTP: это граница
         // защиты от внедрения новой строки заголовков. Произвольный Unicode также
         // не превращаем молча в байты с потерей данных; кодирование — задача расширения.
         for (int i = 0; i < value.length(); i++) {

@@ -15,8 +15,9 @@ import java.util.concurrent.CompletionStage;
 import java.util.function.Supplier;
 
 /**
- * Adapter for ordinary Mono sources whose terminal/cancel signal ends their operation.
- * Sources with asynchronous external cleanup must use an explicit CommandTask instead.
+ * Адаптирует обычный Mono, у которого завершение или отмена подписки завершает владение ресурсами.
+ * Для источника с отдельной асинхронной очисткой нужен явный CommandTask: отмена подписки
+ * сама по себе не подтверждает освобождение таких внешних ресурсов.
  */
 public final class MonoCommandTask<T> extends BaseSubscriber<T> implements CommandTask<T> {
     private final CompletableFuture<T> completion = new CompletableFuture<>();
@@ -29,17 +30,22 @@ public final class MonoCommandTask<T> extends BaseSubscriber<T> implements Comma
         this.subscriberContext = Context.of(Objects.requireNonNull(subscriberContext, "subscriberContext"));
     }
 
+    /**
+     * Подписывается на источник отдельным подписчиком и откладывает создание Mono до подписки.
+     * Контекст передаётся явно, чтобы внутренняя подписка не теряла данные исходного подписчика.
+     */
     public static <T> CommandTask<T> start(Supplier<Mono<T>> source, ContextView subscriberContext) {
         var task = new MonoCommandTask<T>(subscriberContext);
         Mono.defer(() -> Objects.requireNonNull(source.get(), "doExecute() returned null")).subscribe(task);
         return task;
     }
 
-    /** Every private attempt subscription inherits its own logical subscriber's immutable context. */
+    /** Передаёт каждой попытке неизменяемый Reactor Context исходного подписчика этой команды. */
     @Override public Context currentContext() { return subscriberContext; }
 
     @Override protected void hookOnNext(T value) { this.value = value; }
     @Override protected void hookOnError(Throwable failure) { this.failure = failure; }
+    /** Переводит завершение подписки в результат задачи; отмену отличает от успешного пустого Mono. */
     @Override protected void hookFinally(SignalType type) {
         if (type == SignalType.CANCEL && failure == null)
             failure = new CommandCancelledException("Reactive source cancelled");

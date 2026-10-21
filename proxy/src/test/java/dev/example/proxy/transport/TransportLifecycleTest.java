@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Проверяем реальные I/O-потоки: mock не обнаружит ожидание потоком собственной остановки. */
+/** Проверяет реальные потоки ввода-вывода: подмена не обнаружит ожидание потоком собственной остановки. */
 @Timeout(15)
 class TransportLifecycleTest {
     @Test
@@ -41,7 +41,7 @@ class TransportLifecycleTest {
                             .get(3, TimeUnit.SECONDS);
                     try {
                         Channel reused = loop.submit(() -> {
-                            // Both operations run in one loop turn; the idle timer cannot run between them.
+                            // Обе операции выполняются в одном проходе цикла; таймер простоя не вклинится между ними.
                             assertTrue(pool.release(first).isSuccess());
                             var acquisition = pool.acquire();
                             assertTrue(acquisition.isSuccess());
@@ -83,7 +83,7 @@ class TransportLifecycleTest {
                     try {
                         pool.release(first).get(3, TimeUnit.SECONDS);
                         assertTrue(delayedClose.started.await(3, TimeUnit.SECONDS));
-                        // Models TLS close_notify: close started, but the socket remains ACTIVE.
+                        // Моделируем TLS close_notify: закрытие началось, но сокет ещё находится в состоянии ACTIVE.
                         assertTrue(first.isActive());
                         assertFalse(first.closeFuture().isDone());
 
@@ -141,7 +141,7 @@ class TransportLifecycleTest {
                         transport.close();
                         assertTrue(Thread.currentThread().isInterrupted(), "Shutdown preserves interrupt status");
                     } finally {
-                        Thread.interrupted(); // Не переносим interrupt в следующий JUnit test.
+                        Thread.interrupted(); // Сбрасываем флаг прерывания, чтобы он не повлиял на следующий тест JUnit.
                     }
 
                     assertFalse(leased.isOpen());
@@ -174,7 +174,7 @@ class TransportLifecycleTest {
                 ctx.close(promise);
                 return;
             }
-            // Each intercepted close promise completes only when the real socket closes.
+            // Каждый перехваченный результат close подтверждается лишь после закрытия настоящего сокета.
             ctx.channel().closeFuture().addListener(ignored -> promise.trySuccess());
             started.countDown();
         }

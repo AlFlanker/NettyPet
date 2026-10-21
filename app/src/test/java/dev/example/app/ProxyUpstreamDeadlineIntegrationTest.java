@@ -30,7 +30,7 @@ import org.springframework.context.ConfigurableApplicationContext;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** The upstream header deadline excludes slow uploads and response-body streaming. */
+/** Проверяет, что срок ожидания заголовков не включает медленную загрузку запроса и передачу тела ответа. */
 @Timeout(20)
 class ProxyUpstreamDeadlineIntegrationTest {
     private static final long HEADER_TIMEOUT_MILLIS = 600;

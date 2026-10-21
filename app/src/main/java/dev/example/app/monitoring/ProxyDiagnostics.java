@@ -11,17 +11,17 @@ import org.springframework.jmx.export.annotation.ManagedResource;
 import org.springframework.stereotype.Component;
 
 /**
- * Read-only адаптер наблюдаемости находится в app — в точке композиции транспорта
- * и resilience. Он не добавляет HTTP endpoint, удалённый JMX connector или backend probe.
+ * Предоставляет диагностические показатели только для чтения в точке соединения
+ * транспорта и команд. Не создаёт HTTP-маршрут, удалённый JMX-коннектор или проверку целевого сервера.
  *
- * <p>Набор scalar attributes фиксирован, без URI/клиентских labels. Обработчики R4j
- * лишь увеличивают LongAdder: они не блокируют I/O/timer threads и не сохраняют события.
- * Для каждого ApplicationContext создаётся свой MBean с identity в ObjectName;
- * Spring exporter удаляет его при остановке контекста.</p>
+ * <p>Набор скалярных атрибутов фиксирован; URI и клиентские метки в него не входят.
+ * Обработчики Resilience4j только увеличивают LongAdder: не блокируют потоки I/O и таймеров
+ * и не сохраняют события. Каждый ApplicationContext получает отдельный MBean
+ * с уникальным ObjectName; Spring удаляет его при остановке контекста.</p>
  *
- * <p>Поля читаются независимо, не являются общим атомарным snapshot. Счётчики byte/duration
- * относятся к завершённым proxy exchange; duration включает cleanup. JMX не заменяет
- * внешний замер p99, RSS/direct memory и результата получения тела клиентом.</p>
+ * <p>Поля читаются независимо и не образуют атомарный снимок. Счётчики байтов и времени
+ * относятся к завершённым обменам; время включает очистку ресурсов. JMX не заменяет
+ * измерение задержки p99, памяти процесса, прямой памяти и результата чтения тела клиентом.</p>
  */
 @Component
 @ConditionalOnProperty(name = "spring.jmx.enabled", havingValue = "true")
@@ -37,6 +37,7 @@ public final class ProxyDiagnostics {
     private final LongAdder timeLimiterErrors = new LongAdder();
     private final LongAdder timeLimiterTimeouts = new LongAdder();
 
+    /** Подписывает независимые счётчики диагностики на события фактически используемых лимитеров. */
     public ProxyDiagnostics(ProxyEngine engine, ProxyCommands commands,
                             ApplicationAvailability availability) {
         this.engine = engine;

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/** Проверяет различение перегрузки, таймаутов и ошибок сети при выборе HTTP-статуса. */
 class ProxyFailureTest {
     @Test
     void upstreamTimeoutsBecome504EvenWhenWrappedByNetworkLibraries() {

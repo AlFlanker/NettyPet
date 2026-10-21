@@ -4,11 +4,12 @@ import java.net.URI;
 import java.util.Locale;
 
 /**
- * Нормализованный ключ allowlist и пула: scheme + host + фактический port.
- * Это проверка имени назначения, не DNS/IP-фильтрация. IPv6 хранится без скобок;
- * скобки добавляются только при построении HTTP authority/Host.
+ * Нормализованный ключ списка разрешённых назначений и пула соединений: схема,
+ * имя узла и фактический порт. Он проверяет имя назначения, но не фильтрует DNS/IP.
+ * Адрес IPv6 хранится без скобок; для адресной части URI и Host скобки добавляются.
  */
 public record Origin(String scheme, String host, int port) {
+    /** Приводит схему и узел к единому виду и отклоняет неподдерживаемую схему или порт. */
     public Origin {
         scheme = scheme.toLowerCase(Locale.ROOT);
         host = host.toLowerCase(Locale.ROOT);
@@ -23,6 +24,7 @@ public record Origin(String scheme, String host, int port) {
         }
     }
 
+    /** Проверяет URI и подставляет порт 80 или 443, если порт не указан явно. */
     public static Origin from(URI uri) {
         UpstreamUri.validate(uri);
         String scheme = uri.getScheme().toLowerCase(Locale.ROOT);
@@ -32,6 +34,7 @@ public record Origin(String scheme, String host, int port) {
 
     public boolean secure() { return scheme.equals("https"); }
 
+    /** Формирует значение Host: заключает IPv6 в скобки и опускает стандартный порт схемы. */
     public String authority() {
         String authorityHost = host.indexOf(':') >= 0 ? '[' + host + ']' : host;
         boolean defaultPort = secure() ? port == 443 : port == 80;

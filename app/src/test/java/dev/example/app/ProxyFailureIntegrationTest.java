@@ -36,7 +36,7 @@ import org.springframework.context.annotation.Bean;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.awaitility.Awaitility.await;
 
-/** Raw upstream responses exercise framing that higher-level HTTP servers would sanitize. */
+/** Проверяет некорректное HTTP-оформление ответа, отправляя байты целевого сервера напрямую. */
 @Timeout(15)
 class ProxyFailureIntegrationTest {
     private static ServerSocket backend;
@@ -73,8 +73,8 @@ class ProxyFailureIntegrationTest {
                 .run("--server.port=0", "--proxy.upstream=http://127.0.0.1:" + backend.getLocalPort(),
                         "--proxy.allowed-origins[0]=http://127.0.0.1:" + refusedPort,
                         "--proxy.io-threads=1", "--proxy.connect-timeout=1s",
-                        // This fixture tests wire framing, not CircuitBreaker transitions.
-                        // A larger window keeps one malformed response from changing another test's route.
+                        // Проверяем оформление HTTP на проводе, а не переходы CircuitBreaker. Большое окно
+                        // не позволяет ошибке одного ответа закрыть доступ для следующей проверки.
                         "--proxy-command.sliding-window-size=100", "--proxy-command.minimum-number-of-calls=100",
                         "--proxy.exchange-timeout=5s", "--spring.main.banner-mode=off");
         Object webServer = application.getClass().getMethod("getWebServer").invoke(application);
@@ -94,7 +94,7 @@ class ProxyFailureIntegrationTest {
 
     @Test
     void bodylessHttp11RequestDoesNotAcquireArtificialChunkedFraming() throws Exception {
-        // Unlike a high-level client, this request is guaranteed to omit both CL and TE.
+        // Отправляем запрос напрямую, чтобы гарантированно не добавить Content-Length и Transfer-Encoding.
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress("127.0.0.1", port), 3000);
             socket.setSoTimeout(5000);
@@ -169,8 +169,8 @@ class ProxyFailureIntegrationTest {
 
     @Test
     void rejects000ImmediatelyInsteadOfWaitingForFinalResponse() throws Exception {
-        // The backend deliberately stays open. A shorter client deadline ensures that
-        // 000 cannot pass this test by eventually becoming a proxy timeout or socket EOF.
+        // Целевой сервер оставляет соединение открытым. Более короткий срок ожидания клиента
+        // не позволяет статусу 000 пройти проверку за счёт позднего таймаута прокси или закрытия сокета.
         HttpResponse<byte[]> response = get("/invalid-status-000", Duration.ofSeconds(2));
         assertEquals(502, response.statusCode());
         assertEquals(0, response.body().length);
@@ -185,7 +185,7 @@ class ProxyFailureIntegrationTest {
 
     @Test
     void refusedUpstreamConnectionIsBadGatewayNotCapacityExhaustion() throws Exception {
-        // Reserve until the app has chosen its port; then connect immediately to the closed port.
+        // Удерживаем порт до запуска приложения, затем освобождаем его и сразу проверяем отказ соединения.
         refusedPortReservation.close();
         HttpResponse<byte[]> response = get("/connect-refused");
         assertEquals(502, response.statusCode());
@@ -211,8 +211,8 @@ class ProxyFailureIntegrationTest {
             try (var body = response.body()) {
                 assertEquals(200, response.statusCode());
                 assertArrayEquals("hello".getBytes(StandardCharsets.US_ASCII), body.readNBytes(5));
-                // A real client has received the prefix: the response is irrevocably committed.
-                // Only now may the raw backend send malformed framing or truncate its body.
+                // Клиент уже получил начало тела, поэтому статус и заголовки ответа зафиксированы.
+                // Только теперь целевой сервер отправляет некорректное продолжение или обрывает тело.
                 release.countDown();
                 assertThrows(IOException.class, body::readAllBytes,
                         "An incomplete response must fail, not look like a successfully finished body");
@@ -287,13 +287,13 @@ class ProxyFailureIntegrationTest {
                     socket.getOutputStream().write("G\r\nx\r\n0\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
                     socket.getOutputStream().flush();
                 }
-                // /truncated-length closes with only five of the declared twenty bytes sent.
+                // Маршрут /truncated-length закрывает соединение после 5 байт из заявленных 20.
             }
-            if (path.equals("/invalid-status-000")) input.read(); // Wait until the proxy rejects and closes.
+            if (path.equals("/invalid-status-000")) input.read(); // Ждём, пока прокси отклонит ответ и закроет соединение.
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
         } catch (IOException ignored) {
-            // Proxy rejection and teardown can close the socket while the test peer is writing.
+            // Отказ прокси или очистка теста могут закрыть сокет во время записи тестовым сервером.
         }
     }
 

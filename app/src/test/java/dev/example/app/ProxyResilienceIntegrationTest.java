@@ -30,7 +30,7 @@ import org.springframework.context.ConfigurableApplicationContext;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Real sockets verify that resilience owns the entire streaming exchange, including cancellation. */
+/** Проверяет через сокеты, что политики команд охватывают весь потоковый обмен, включая отмену. */
 @Timeout(20)
 class ProxyResilienceIntegrationTest {
     private static final byte[] FIRST = "first\n".getBytes(StandardCharsets.US_ASCII);
@@ -98,7 +98,7 @@ class ProxyResilienceIntegrationTest {
             f.awaitReleased();
             f.upstreamStatus.set(200);
 
-            // Permission requests drive OPEN -> HALF_OPEN when automatic transition is disabled.
+            // При выключенном автоматическом переходе запрос разрешения переводит OPEN в HALF_OPEN.
             await().pollInterval(Duration.ofMillis(25)).atMost(Duration.ofSeconds(3)).until(() -> {
                 int status = f.get("/status").statusCode();
                 assertTrue(status == 503 || status == 200, "Unexpected probe status: " + status);
@@ -180,7 +180,7 @@ class ProxyResilienceIntegrationTest {
                     "--proxy-command.timeout=5s", "--proxy-command.max-concurrent=8",
                     "--proxy-command.minimum-number-of-calls=2", "--proxy-command.sliding-window-size=2",
                     "--proxy-command.failure-rate-threshold=50", "--spring.main.banner-mode=off"));
-            // Spring command-line properties accumulate duplicate values, so replace each default explicitly.
+            // Spring объединяет повторяющиеся параметры командной строки; явно заменяем каждое значение по умолчанию.
             for (String override : overrides) {
                 String key = override.substring(0, override.indexOf('=') + 1);
                 arguments.removeIf(argument -> argument.startsWith(key));

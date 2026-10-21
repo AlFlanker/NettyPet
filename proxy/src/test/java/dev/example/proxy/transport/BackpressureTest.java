@@ -54,9 +54,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * Deterministic pressure tests: operating-system socket buffers cannot make these assertions stable.
- * The fixture starts at the already-acquired-channel boundary; integration tests cover acquisition
- * and Jetty itself. The fake output deliberately retains the caller's array until the next callback.
+ * Управляемые проверки обратного давления: состояние буферов ОС не даёт устойчивых результатов.
+ * Тест начинает работу с уже полученным каналом; получение канала и сам Jetty проверяются
+ * интеграционными тестами. Подменённый вывод намеренно удерживает массив до следующего уведомления.
  */
 class BackpressureTest {
     @Test
@@ -103,7 +103,7 @@ class BackpressureTest {
 
             h.exchange.received(new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
             verify(timer.future()).cancel(false);
-            timer.task().run(); // A queued timer callback remains harmless after final headers.
+            timer.task().run(); // Уже поставленный в очередь таймер ничего не меняет после получения финальных заголовков.
             h.drain();
 
             verify(h.response, never()).setStatus(504);
@@ -118,7 +118,7 @@ class BackpressureTest {
         for (boolean earlyResponse : List.of(false, true)) {
             try (Harness h = new Harness()) {
                 h.exchange.signal();
-                h.drain(); // LastHttpContent is in flight.
+                h.drain(); // Последний фрагмент LastHttpContent ещё ожидает завершения записи.
                 if (earlyResponse)
                     h.exchange.received(new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN));
                 else {
@@ -191,7 +191,7 @@ class BackpressureTest {
                 return null;
             }).when(h.async).complete();
 
-            // Cancellation of a detached CompletableFuture is not an I/O cancellation API.
+            // Отмена отдельной копии CompletableFuture не является сигналом отмены сетевого обмена.
             h.exchange.completion().toCompletableFuture().cancel(true);
             assertFalse(h.exchange.completion().toCompletableFuture().isDone());
             h.exchange.cancel(504);
@@ -223,7 +223,7 @@ class BackpressureTest {
             var physicallyClosed = new DefaultChannelPromise(h.channel, ImmediateEventExecutor.INSTANCE);
             when(h.channel.closeFuture()).thenReturn(physicallyClosed);
             when(h.channel.isActive()).thenReturn(true);
-            // A close operation can finish while TLS is still flushing close_notify.
+            // Вызов close может завершиться раньше фактической отправки TLS close_notify.
             assertTrue(h.channel.close().isSuccess());
             clearInvocations(h.channel);
 
@@ -286,7 +286,7 @@ class BackpressureTest {
             h.exchange.start();
             h.drain();
 
-            h.exchange.cancel(504); // Queue cancellation before acquire's listener notification.
+            h.exchange.cancel(504); // Ставим отмену в очередь раньше уведомления о результате получения канала.
             acquire.setSuccess(h.channel);
             assertTrue(acquire.isDone());
             h.tasks.remove().run();
@@ -390,7 +390,7 @@ class BackpressureTest {
                     assertTrue(abortThrows);
                     assertSame(adapterFailure, failure);
                 }
-                // Stream errors need an explicit abort; they are not AsyncContext completion callbacks.
+                // Ошибка потока требует явного прерывания ответа и не означает завершение AsyncContext.
                 verify(h.transport, times(1)).abortDownstream(h.request, readFailure);
                 h.input.listener.onError(new IOException("Late duplicate stream failure"));
                 h.output.completeWrite();
@@ -457,7 +457,7 @@ class BackpressureTest {
             doAnswer(invocation -> { listeners.add(invocation.getArgument(0)); return null; })
                     .when(h.async).addListener(any(AsyncListener.class));
             h.exchange.start();
-            // This fixture already owns its channel. Integration tests cover acquisition itself.
+            // Тест уже владеет каналом; само получение канала проверяется интеграционными тестами.
             h.tasks.clear();
             h.downloadMode();
             h.receive(repeated((byte) 13));
@@ -465,7 +465,7 @@ class BackpressureTest {
             h.drain();
             assertEquals(1, h.output.writeCalls);
 
-            h.output.completeWrite(); // Queue a ready pump before cancellation reaches the loop.
+            h.output.completeWrite(); // Ставим обработку готового вывода в очередь раньше, чем цикл обработает отмену.
             listeners.getFirst().onError(new AsyncEvent(h.async, new IOException("Client disconnected")));
             h.drain();
 
@@ -504,7 +504,7 @@ class BackpressureTest {
             assertEquals(1, h.input.readCalls);
             assertEquals(1, h.writes.size());
 
-            // The servlet still reports ready, but Netty owns the outstanding buffer.
+            // Входной поток Servlet ещё готов к чтению, но отправляемым буфером уже владеет Netty.
             h.exchange.signal();
             h.drain();
             assertEquals(1, h.input.readCalls);
@@ -515,7 +515,7 @@ class BackpressureTest {
             assertEquals(1, h.input.readCalls, "Write completion alone must not ignore channel pressure");
 
             h.writable.set(true);
-            h.exchange.signal(); // Equivalent to channelWritabilityChanged.
+            h.exchange.signal(); // Имитируем уведомление channelWritabilityChanged о готовности канала к записи.
             h.drain();
             assertEquals(2, h.input.readCalls, "No new servlet callback is required to resume a ready input");
             assertEquals(2, h.writes.size());
@@ -538,7 +538,7 @@ class BackpressureTest {
             assertEquals(1, secondBuffer.refCnt(), "Unwritten content stays retained while downstream is blocked");
             verify(h.channel, never()).read();
 
-            // Repeated upstream/servlet signals cannot overwrite a pending output buffer.
+            // Повторные сигналы сервера и Servlet не должны менять буфер незавершённой записи.
             h.exchange.signal();
             h.exchange.signal();
             h.drain();
@@ -562,7 +562,7 @@ class BackpressureTest {
             System.arraycopy(second, 0, expected, first.length, second.length);
             assertArrayEquals(expected, h.output.completed.toByteArray());
 
-            // A spurious callback must not start an endless empty flush/callback cycle.
+            // Лишнее уведомление не должно запускать бесконечную отправку пустых записей.
             h.exchange.signal();
             h.drain();
             assertEquals(1, h.output.flushCalls);
@@ -588,7 +588,7 @@ class BackpressureTest {
             verify(h.channel, times(1)).close();
             verify(h.pool, times(1)).release(h.channel);
 
-            h.output.completeWrite(); // A late completion after cancellation is harmless.
+            h.output.completeWrite(); // Поздняя запись после отмены должна завершить очистку, не возобновляя передачу.
             h.drain();
             assertEquals(1, h.output.writeCalls);
             verify(h.channel, never()).read();
@@ -613,10 +613,10 @@ class BackpressureTest {
                 assertEquals(1, extra.refCnt(), "Rejected payload must not acquire queue ownership");
                 assertEquals(4 * Harness.CHUNK, field(h.exchange, "queuedBytes"));
             } finally {
-                content.release(); // NettyTransport.Inbound releases every decoder message.
+                content.release(); // NettyTransport.Inbound освобождает каждое сообщение, полученное от декодера.
             }
 
-            h.exchange.fail(502, overflow); // The bridge turns the receive failure into cleanup.
+            h.exchange.fail(502, overflow); // Адаптер преобразует ошибку приёма в завершение обмена с очисткой ресурсов.
             h.drain();
 
             assertEquals(0, extra.refCnt());
@@ -823,7 +823,7 @@ class BackpressureTest {
             h.receive(repeated((byte) 8));
             h.drain();
             Thread containerCallback = new Thread(() -> h.nativeOutput.complete(null));
-            // Models Jetty callback holding its own lock while the owner pump holds servletGuard.
+            // Имитируем обратный вызов Jetty под его блокировкой, пока обработчик обмена удерживает servletGuard.
             synchronized (field(h.exchange, "servletGuard")) {
                 containerCallback.start();
                 containerCallback.join(2000);
@@ -1097,7 +1097,7 @@ class BackpressureTest {
             ByteBuf buffer = Unpooled.wrappedBuffer(bytes);
             HttpContent content = new DefaultHttpContent(buffer);
             try { exchange.received(content); }
-            finally { content.release(); } // Same ownership contract as NettyTransport.Inbound.
+            finally { content.release(); } // Соблюдаем тот же порядок владения и освобождения, что и NettyTransport.Inbound.
             return buffer;
         }
 
@@ -1110,7 +1110,7 @@ class BackpressureTest {
         }
 
         void completeUpload(int index) {
-            ReferenceCountUtil.release(writes.get(index)); // Netty releases its outbound ownership.
+            ReferenceCountUtil.release(writes.get(index)); // Имитируем освобождение буфера, которым владела исходящая запись Netty.
             writePromises.get(index).setSuccess();
         }
 

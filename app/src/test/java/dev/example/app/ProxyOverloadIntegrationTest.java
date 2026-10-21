@@ -105,7 +105,7 @@ class ProxyOverloadIntegrationTest {
                     try {
                         exchange.getRequestBody().readAllBytes();
                     } catch (IOException cancelled) {
-                        // The proxy must close its upstream socket after the downstream RST.
+                        // После клиентского RST прокси должен закрыть соединение с внешним сервером.
                     } finally {
                         uploadClosed.countDown();
                     }
@@ -131,7 +131,7 @@ class ProxyOverloadIntegrationTest {
                 client.getOutputStream().flush();
                 assertTrue(uploadEntered.await(3, TimeUnit.SECONDS), "The unfinished upload must reach upstream");
                 assertEquals(1, engine.activeRequests());
-                // RST makes cancellation observable while Jetty waits for the rest of the body.
+                // RST позволяет обнаружить отмену, пока Jetty ожидает оставшуюся часть тела запроса.
                 client.setSoLinger(true, 0);
             }
             assertTrue(uploadClosed.await(3, TimeUnit.SECONDS),
@@ -151,8 +151,8 @@ class ProxyOverloadIntegrationTest {
     }
 
     private static void awaitReleased(ProxyEngine engine) {
-        // Клиент может получить последний байт до завершения pool-release/cleanup.
-        // Permit возвращается по этому подтверждению, а не по моменту чтения HTTP-ответа.
+        // Клиент может прочитать последний байт до возврата канала в пул и очистки ресурсов.
+        // Слот освобождается только после очистки, а не после получения HTTP-ответа.
         await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertEquals(0, engine.activeRequests()));
     }
 

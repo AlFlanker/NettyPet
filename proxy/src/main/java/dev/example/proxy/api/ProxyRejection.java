@@ -1,6 +1,6 @@
 package dev.example.proxy.api;
 
-/** Явный отказ Processor/политики назначения. Текст ошибки не раскрывается HTTP-клиенту. */
+/** Явный отказ процессора или политики назначения; текст причины не передаётся HTTP-клиенту. */
 public final class ProxyRejection extends RuntimeException {
     private final int status;
 

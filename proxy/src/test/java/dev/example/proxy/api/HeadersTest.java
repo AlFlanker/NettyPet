@@ -9,6 +9,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/** Проверяет валидацию HTTP-полей и отсутствие общих изменяемых данных в копиях и снимках. */
 class HeadersTest {
     @Test
     void preservesSeparateValuesAndUsesCaseInsensitiveNames() {
