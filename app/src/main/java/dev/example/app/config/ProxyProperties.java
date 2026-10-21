@@ -30,7 +30,7 @@ public record ProxyProperties(
         @DefaultValue("256") int maxConcurrent,
         @DefaultValue("64") int connectionsPerOriginPerLoop,
         @DefaultValue("64") int pendingAcquiresPerPool,
-        @DefaultValue("16384") int chunkBytes,
+        @DefaultValue("65536") int chunkBytes,
         @DefaultValue("262144") int responseBufferBytes,
         @DefaultValue("3s") Duration connectTimeout,
         @DefaultValue("5s") Duration acquireTimeout,

@@ -14,7 +14,7 @@ proxy:
   max-concurrent: 256
   connections-per-origin-per-loop: 64
   pending-acquires-per-pool: 64
-  chunk-bytes: 16384
+  chunk-bytes: 65536
   response-buffer-bytes: 262144
   connect-timeout: 3s
   acquire-timeout: 5s

@@ -133,6 +133,14 @@ Fixed receive allocator использует `chunk-bytes` и `maxMessagesPerRea
 Даже abort или окончание async
 не разрешают вернуть этот буфер в pool до callback. Одновременно допускается одна
 запись; завершение команды и возврат Bulkhead permit ждут её cleanup.
+`Response.write` Jetty уже публикует переданную порцию: после её подтверждения
+не выполняется дополнительная пустая запись `flush`. Адаптеры, которые могут
+буферизовать данные, сохраняют явный `flush` после каждой группы чтения.
+
+Порция по умолчанию — 64 KiB: для больших тел это уменьшает число чтений сокета,
+записей и callback по сравнению с 16 KiB. Чтение не ждёт заполнения порции,
+поэтому короткие события по-прежнему передаются сразу. Общий лимит очереди ответа
+остаётся 256 KiB; для меньшего upload/scratch можно задать `--proxy.chunk-bytes=16384`.
 
 Для response wrappers и другого Servlet-контейнера используется переносимый путь.
 Он выделяет один `byte[]` scratch только при первой порции тела и переиспользует его
@@ -141,8 +149,8 @@ Fixed receive allocator использует `chunk-bytes` и `maxMessagesPerRea
 не ожидали завершения всего ответа. Это сокращение копий между библиотеками;
 **сквозной zero-copy через TLS, контейнер и ядро ОС не заявляется**.
 
-Пределы по умолчанию на обмен: до 16 KiB upload, до 256 KiB payload в очереди ответа
-и, только в переносимом пути с непустым телом, 16 KiB output scratch.
+Пределы по умолчанию на обмен: до 64 KiB upload, до 256 KiB payload в очереди ответа
+и, только в переносимом пути с непустым телом, 64 KiB output scratch.
 Это не предел полной памяти JVM:
 отдельно существуют headers, объекты, pooled allocations, Jetty, TLS и socket buffers.
 Превышение защитного лимита batch завершает обмен ошибкой `502` до commit ответа;
@@ -160,7 +168,7 @@ Fixed receive allocator использует `chunk-bytes` и `maxMessagesPerRea
 | `max-concurrent` | `256` | Общий предел принятых обменов, включая ожидание pool |
 | `connections-per-origin-per-loop` | `64` | Предел соединений одного origin на одном loop |
 | `pending-acquires-per-pool` | `64` | Предел ожидающих получения соединения |
-| `chunk-bytes` | `16384` | Размер upload/scratch/receive буфера |
+| `chunk-bytes` | `65536` | Размер upload/scratch/receive буфера |
 | `response-buffer-bytes` | `262144` | Защитный предел payload очереди ответа |
 | `connect-timeout` | `3s` | TCP connect, TLS handshake и отдельный DNS query |
 | `acquire-timeout` | `5s` | Ожидание соединения из pool |

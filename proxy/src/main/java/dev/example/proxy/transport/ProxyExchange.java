@@ -510,6 +510,9 @@ final class ProxyExchange implements ProxyCall {
             writerBusy = true;
             pendingCleanup++;
             downloaded += count;
+            // Сама запись публикует также ожидающие заголовки. Если тела ещё нет,
+            // flushPending сохраняется: заголовки нужно отправить до следующего read().
+            if (downstreamWriter.flushesOnWrite()) flushPending = false;
             try { downstreamWriter.write(view, writeCompletion); }
             catch (IOException | RuntimeException | Error failure) {
                 downstreamWriteCompleted(failure);

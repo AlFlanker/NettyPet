@@ -4,3 +4,5 @@
 /.idea/
 *.iml
 *.log
+__pycache__/
+*.py[cod]
