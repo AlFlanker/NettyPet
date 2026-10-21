@@ -27,15 +27,9 @@
       "failures": 0,
       "errors": 0,
       "skipped": 0
-    },
-    "resilience": {
-      "tests": 18,
-      "failures": 0,
-      "errors": 0,
-      "skipped": 0
     }
   },
-  "totalTests": 261,
+  "totalTests": 243,
   "independentReviewRoles": 5,
   "reviewReport": "COMMAND_SUPPORT_REVIEW.md",
   "artifactChecks": {
@@ -47,14 +41,15 @@
     "moduleImportsIsolated": true,
     "commandSupportBundled": true,
     "legacyResilienceAbsentFromApp": true,
-    "reactorIncluded": true
+    "reactorIncluded": true,
+    "legacyResilienceModuleRemoved": true
   },
   "loadAndSoakTestsPerformed": false,
   "productionDecision": "Five-role functional review passed; production readiness/SLO/load/soak approval is outside this change",
   "realTlsIntegrationTests": 4,
   "upstreamHeaderDeadlineNetworkTests": 3,
   "optimizationReport": "OPTIMIZATIONS.md",
-  "bootJarSha256": "296aebc6a56d09b9a5d16804962582f902aede803e59f91128ef640bedca53db",
+  "bootJarSha256": "40373c07f6cc1a1c01700c7f7f21e1dd0b7e61bd27672b034b1d3b9f2a6affef",
   "allocationExperiment": {
     "performed": true,
     "report": "perf/results.json",
@@ -100,7 +95,8 @@
     "One monotonic deadline gates initial/retry attempts and late results; retry callbacks use a bounded pool",
     "Servlet fatal start errors preserve response ownership and Error propagation",
     "All actual R4j registries receive lifecycle-aware Micrometer binding; filtered aliases and publication-close races are safe",
-    "Reactor Context is isolated per subscriber and preserved across retry/fallback"
+    "Reactor Context is isolated per subscriber and preserved across retry/fallback",
+    "Removed the unused legacy resilience module; its 18 executor regression tests remain in command-support"
   ],
   "idleRetirementRegression": {
     "failedBeforeFix": true,
@@ -110,5 +106,6 @@
   "appShutdownDuringTrafficTestPassed": true,
   "readOnlyJmxIntegrationTests": 3,
   "additionalValidatedTests": 93,
-  "sourceSnapshotSha256": "2899e006bf7ad4771ae088bc24cb995b47ac87210364c405311797f2996898bc"
+  "sourceSnapshotSha256": "fdd10931526772be1bd62f33b80a10efafea241ada53707f6a933ed4fccf34af",
+  "validationBaselineTests": 150
 }
