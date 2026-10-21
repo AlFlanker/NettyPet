@@ -4,7 +4,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;
 import dev.example.proxy.transport.ProxyEngine;
-import dev.example.resilience.CommandExecutor;
+import dev.example.app.command.ProxyCommands;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
@@ -189,7 +189,7 @@ class ProxyTlsIntegrationTest {
         final ConfigurableApplicationContext application;
         final HttpClient client;
         final ProxyEngine engine;
-        final CommandExecutor<?> commands;
+        final ProxyCommands commands;
         final int port;
 
         Fixture(SSLContext serverContext, String host, String timeout) throws Exception {
@@ -213,7 +213,7 @@ class ProxyTlsIntegrationTest {
             Object webServer = application.getClass().getMethod("getWebServer").invoke(application);
             port = (int) webServer.getClass().getMethod("getPort").invoke(webServer);
             engine = application.getBean(ProxyEngine.class);
-            commands = application.getBean("proxyCommands", CommandExecutor.class);
+            commands = application.getBean("proxyCommands", ProxyCommands.class);
             client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
                     .connectTimeout(Duration.ofSeconds(3)).build();
         }

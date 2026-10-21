@@ -6,4 +6,4 @@ pluginManagement {
 }
 
 rootProject.name = 'async-proxy'
-include 'app', 'proxy', 'resilience'
+include 'app', 'proxy', 'resilience', 'command-support'

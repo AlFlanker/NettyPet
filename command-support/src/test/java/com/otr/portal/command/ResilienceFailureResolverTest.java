@@ -13,6 +13,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -31,6 +33,28 @@ class ResilienceFailureResolverTest {
         RuntimeException wrapped = new RuntimeException("wrapper", new TimeoutException("deadline"));
         assertThat(ResilienceFailureResolver.resolve(wrapped))
                 .isEqualTo(ResilienceFailureKind.TIMEOUT);
+    }
+
+    @Test
+    void shouldResolveNestedAsyncWrappers() {
+        Throwable failure = new CompletionException(new ExecutionException(
+                new RuntimeException("adapter", new TimeoutException("deadline"))));
+        assertThat(ResilienceFailureResolver.resolve(failure)).isEqualTo(ResilienceFailureKind.TIMEOUT);
+    }
+
+    @Test
+    void shouldStopAtCyclicCauseChain() {
+        RuntimeException first = new RuntimeException("first");
+        RuntimeException second = new RuntimeException("second", first);
+        first.initCause(second);
+        assertThat(ResilienceFailureResolver.resolve(first)).isEqualTo(ResilienceFailureKind.OTHER);
+    }
+
+    @Test
+    void shouldBoundPathologicalCauseChains() {
+        Throwable failure = new TimeoutException("outside diagnostic depth");
+        for (int depth = 0; depth < 100; depth++) failure = new RuntimeException("wrapper", failure);
+        assertThat(ResilienceFailureResolver.resolve(failure)).isEqualTo(ResilienceFailureKind.OTHER);
     }
 
     @Test

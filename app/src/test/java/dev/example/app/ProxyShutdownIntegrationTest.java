@@ -1,7 +1,7 @@
 package dev.example.app;
 
 import dev.example.proxy.transport.ProxyEngine;
-import dev.example.resilience.CommandExecutor;
+import dev.example.app.command.ProxyCommands;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
@@ -56,7 +56,7 @@ class ProxyShutdownIntegrationTest {
                 Object server = application.getClass().getMethod("getWebServer").invoke(application);
                 int port = (int) server.getClass().getMethod("getPort").invoke(server);
                 ProxyEngine engine = application.getBean(ProxyEngine.class);
-                CommandExecutor<?> commands = application.getBean("proxyCommands", CommandExecutor.class);
+                ProxyCommands commands = application.getBean("proxyCommands", ProxyCommands.class);
                 try (Socket uploading = new Socket("127.0.0.1", port);
                      HttpClient client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
                              .connectTimeout(Duration.ofSeconds(3)).build()) {

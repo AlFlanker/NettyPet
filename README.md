@@ -2,7 +2,8 @@
 
 Потоковый reverse proxy на Java 21, Spring Boot **4.1.1**, Spring WebMVC,
 Jetty **12.1.12** из BOM Spring Boot, Netty **4.2.19.Final**
-и Resilience4j **2.4.0**. Приложение состоит из трёх Gradle-модулей.
+и Resilience4j **2.4.0**. Приложение использует модули `app`, `proxy` и `command-support`; прежний
+`resilience` сохранён в сборке как самостоятельная совместимая библиотека.
 Модули Netty согласованно зафиксированы через Gradle `enforcedPlatform` и Netty BOM.
 Jetty принимает запросы, Netty устанавливает соединения с upstream.
 Тела запросов и ответов передаются порциями; размер тела не определяет размер буферов прокси.
@@ -36,13 +37,16 @@ Raw query и существующие `%XX`-последовательности
 | --- | --- | --- |
 | `app` | Spring Boot, Jetty, MVC, фильтр, композиция команд и прокси, настройки и Processor beans | `app/build/libs/app-1.0.0.jar` — исполняемое приложение |
 | `proxy` | `ProxyEngine`, SPI, Netty, async Servlet I/O, обратное давление и пулы | `proxy/build/libs/proxy-1.0.0.jar` — обычная библиотека |
-| `resilience` | Generic Command, TimeLimiter, semaphore Bulkhead и CircuitBreaker | `resilience/build/libs/resilience-1.0.0.jar` — обычная библиотека |
+| `command-support` | Reactor Command API, ресурсный lifecycle, TimeLimiter, Bulkhead, CircuitBreaker и opt-in Retry | `command-support/build/libs/command-support-1.0.0.jar` — библиотека приложения |
+| `resilience` | Прежний CompletionStage API, сохранён для существующих клиентов | `resilience/build/libs/resilience-1.0.0.jar` — отдельная библиотека |
 
-`app` зависит от `proxy` и `resilience`. Между `proxy` и `resilience` нет зависимостей: стык находится только в `app`.
+`app` зависит от `proxy` и `command-support`. Между транспортом и библиотекой команд нет зависимости: стык находится только в `app`.
 Модуль `proxy` не зависит от Spring Boot или Jetty. Его код использует Netty,
 Servlet API и SLF4J; Servlet-контейнер предоставляет приложение.
 Он не знает префикс `/proxy`, MVC-маршруты, команды или Resilience4j.
-`resilience` не знает Servlet, Spring, Netty, HTTP или proxy; используется и для других асинхронных операций.
+`command-support` не знает Servlet, Netty, HTTP или proxy. Его API работает без Spring;
+Spring-конфигурация и Micrometer подключаются отдельно. В приложении используется ресурсный
+вариант команды, который удерживает лимит до окончания асинхронной очистки.
 
 | Пакет | Ответственность |
 | --- | --- |
@@ -52,7 +56,7 @@ Servlet API и SLF4J; Servlet-контейнер предоставляет пр
 | `app: dev.example.app.config` | Spring-конфигурация, `ProxyProperties` и регистрация фильтра |
 | `app: dev.example.app.web` | `ProxyFilter` и пример локального MVC-контроллера |
 | `app: dev.example.app.command` | `ProxyRequestCommand` и HTTP-адаптер композиции |
-| `resilience: dev.example.resilience` | Контракт команды, исполнитель и отмена |
+| `command-support: com.otr.portal.command` | Реактивные команды, реестр политик, ресурсный lifecycle и отмена |
 | `examples` | Отключённый по умолчанию пример заголовков и изменения URI |
 
 ## Маршрутизация приложением
@@ -60,7 +64,7 @@ Servlet API и SLF4J; Servlet-контейнер предоставляет пр
 `ProxyFilter` зарегистрирован на `/*` для `DispatcherType.REQUEST` с `asyncSupported=true`.
 Он сопоставляет raw path относительно context path с точным `/proxy` или `/proxy/…`.
 После совпадения удаляет только этот префикс и вызывает
-`ProxyRequestHandler`, который выполняет `ProxyRequestCommand` через `CommandExecutor`.
+`ProxyRequestHandler`, который синхронно подписывается на `ProxyRequestCommand.execute()`.
 Только допущенная команда вызывает `ProxyEngine.forwardAsync(...)`. Остальные запросы передаёт дальше
 через `FilterChain`, и их обслуживает обычный Spring MVC.
 
@@ -246,9 +250,12 @@ RequestProcessor additionalHeaders() {
 
 ## Команды и Resilience4j
 
-В `resilience` определены `Command<T>`, `CommandTask<T>`, `CommandExecution<T>` и
-`CommandExecutor<T>`. В `app` команда одного запроса — `ProxyRequestCommand`;
+В `command-support` интерфейс `Command<T>` возвращает холодный `Mono<T>`.
+`AbstractResilienceCommand` подходит для обычных реактивных операций, а
+`AbstractResourceCommand` связывает отмену с подтверждённой очисткой через `CommandTask`.
+В `app` ресурсная команда одного запроса — `ProxyRequestCommand`;
 `ProxyCommandConfiguration` задаёт лимиты и сопоставляет результаты proxy с политикой CircuitBreaker.
+Полное API, retry и правила смены конфигурации: [`command-support/README.md`](command-support/README.md).
 
 - **Bulkhead** — semaphore с нулевым ожиданием. Слот удерживается до завершения всего
   тела и cleanup, даже если TimeLimiter уже завершил результат команды таймаутом.
@@ -265,7 +272,9 @@ RequestProcessor additionalHeaders() {
 Параметры находятся в `proxy-command.*`: `timeout=30s`, `max-concurrent=128`,
 `failure-rate-threshold=50`, `sliding-window-size=20`, `minimum-number-of-calls=10`,
 `wait-duration-in-open-state=10s`, `permitted-calls-in-half-open-state=3`.
-Один экземпляр исполнителя защищает одну логическую группу запросов `/proxy`.
+Одна именованная политика защищает логическую группу запросов `/proxy`.
+Автоматический retry выключен: Servlet request body одноразовый. Подписка выполняется
+на Servlet-потоке до возврата фильтра, без переключения scheduler до `startAsync`.
 `proxy.max-concurrent=256` остаётся независимым защитным лимитом самого транспорта.
 
 Подробные контракты, порядок применения политик, классификация отказов и примеры:
@@ -403,7 +412,7 @@ throughput, p95/p99, heap/direct memory и поведение при медле�
 ```bash
 ./gradlew :app:dependencies --configuration runtimeClasspath
 ./gradlew :proxy:dependencies --configuration runtimeClasspath
-./gradlew :resilience:dependencies --configuration runtimeClasspath
+./gradlew :command-support:dependencies --configuration runtimeClasspath
 ```
 
 Документация: [Spring Boot web servers](https://docs.spring.io/spring-boot/how-to/webserver.html),

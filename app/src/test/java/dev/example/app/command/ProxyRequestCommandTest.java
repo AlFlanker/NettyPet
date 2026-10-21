@@ -1,11 +1,18 @@
 package dev.example.app.command;
 
+import com.otr.portal.command.CommandConfigRegistry;
+import com.otr.portal.command.CommandResilienceDecorator;
+import com.otr.portal.command.config.CommandProperties;
+import io.github.resilience4j.bulkhead.BulkheadRegistry;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.github.resilience4j.retry.RetryRegistry;
+import io.github.resilience4j.timelimiter.TimeLimiterRegistry;
 import dev.example.proxy.api.ProxyResult;
 import dev.example.proxy.transport.ProxyCall;
 import dev.example.proxy.transport.ProxyEngine;
-import dev.example.resilience.CancellationReason;
-import dev.example.resilience.CommandCancelledException;
-import dev.example.resilience.CommandNotExecutedException;
+import com.otr.portal.command.execution.CancellationReason;
+import com.otr.portal.command.execution.CommandCancelledException;
+import com.otr.portal.command.execution.CommandNotExecutedException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -30,7 +37,7 @@ class ProxyRequestCommandTest {
             assertFalse(fixture.command.handedToProxy());
             verifyNoInteractions(fixture.engine, fixture.request, fixture.response);
 
-            var task = fixture.command.start();
+            var task = fixture.command.doStart();
             var result = task.completion().toCompletableFuture();
             assertTrue(fixture.command.handedToProxy());
             assertSame(task.completion(), task.completion());
@@ -55,7 +62,7 @@ class ProxyRequestCommandTest {
     void cancellationOnlySignalsTransportAndWaitsForItsCleanup() throws Exception {
         for (CancellationReason reason : CancellationReason.values()) {
             Fixture fixture = fixture();
-            var task = fixture.command.start();
+            var task = fixture.command.doStart();
             var result = task.completion().toCompletableFuture();
 
             task.cancel(reason);
@@ -73,21 +80,21 @@ class ProxyRequestCommandTest {
     @Test
     void commandCannotStartTransportTwiceAndDoesNotClaimOwnershipWhenStartThrows() throws Exception {
         Fixture started = fixture();
-        started.command.start();
-        assertThrows(IllegalStateException.class, started.command::start);
+        started.command.doStart();
+        assertThrows(IllegalStateException.class, started.command::doStart);
         verify(started.engine, times(1)).forwardAsync(started.request, started.response, "/resource");
 
         Fixture rejected = fixture();
         IOException failure = new IOException("Transport did not take ownership");
         when(rejected.engine.forwardAsync(rejected.request, rejected.response, "/resource")).thenThrow(failure);
-        assertSame(failure, assertThrows(IOException.class, rejected.command::start));
+        assertSame(failure, assertThrows(IOException.class, rejected.command::doStart));
         assertFalse(rejected.command.handedToProxy());
         verifyNoInteractions(rejected.request, rejected.response);
     }
 
     private static void assertMapped(ProxyResult transportResult, Class<? extends Throwable> expected) throws Exception {
         Fixture fixture = fixture();
-        var result = fixture.command.start().completion().toCompletableFuture();
+        var result = fixture.command.doStart().completion().toCompletableFuture();
         fixture.cleanedUp.complete(transportResult);
         CompletionException failure = assertThrows(CompletionException.class, result::join);
         assertInstanceOf(expected, failure.getCause());
@@ -103,7 +110,12 @@ class ProxyRequestCommandTest {
         when(engine.forwardAsync(request, response, "/resource")).thenReturn(call);
         when(call.completion()).thenReturn(cleanedUp.minimalCompletionStage());
         return new Fixture(engine, call, request, response, cleanedUp,
-                new ProxyRequestCommand(engine, request, response, "/resource"));
+                new ProxyRequestCommand(decorator(), CommandProperties.defaultProperties(), engine, request, response, "/resource"));
+    }
+
+    private static CommandResilienceDecorator decorator() {
+        return new CommandResilienceDecorator(new CommandConfigRegistry(BulkheadRegistry.ofDefaults(),
+                TimeLimiterRegistry.ofDefaults(), CircuitBreakerRegistry.ofDefaults(), RetryRegistry.ofDefaults()));
     }
 
     private record Fixture(ProxyEngine engine, ProxyCall call, HttpServletRequest request,

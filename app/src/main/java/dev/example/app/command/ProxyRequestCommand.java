@@ -1,13 +1,15 @@
 package dev.example.app.command;
 
+import com.otr.portal.command.AbstractResourceCommand;
+import com.otr.portal.command.CommandResilienceDecorator;
+import com.otr.portal.command.config.CommandProperties;
+import com.otr.portal.command.execution.CancellationReason;
+import com.otr.portal.command.execution.CommandCancelledException;
+import com.otr.portal.command.execution.CommandNotExecutedException;
+import com.otr.portal.command.execution.CommandTask;
 import dev.example.proxy.api.ProxyResult;
 import dev.example.proxy.transport.ProxyCall;
 import dev.example.proxy.transport.ProxyEngine;
-import dev.example.resilience.CancellationReason;
-import dev.example.resilience.Command;
-import dev.example.resilience.CommandCancelledException;
-import dev.example.resilience.CommandNotExecutedException;
-import dev.example.resilience.CommandTask;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -15,12 +17,13 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import reactor.core.publisher.Mono;
 
 /**
- * Команда одного входящего запроса. Только app знает обе стороны композиции.
- * Создание объекта не начинает I/O; start вызывается после допуска resilience-политик.
+ * One incoming request is a single-use resource command. Subscription starts I/O only
+ * after admission; the task's completion confirms that the entire exchange is cleaned up.
  */
-public final class ProxyRequestCommand implements Command<ProxyResult> {
+public final class ProxyRequestCommand extends AbstractResourceCommand<ProxyResult> {
     private final ProxyEngine engine;
     private final HttpServletRequest request;
     private final HttpServletResponse response;
@@ -28,19 +31,28 @@ public final class ProxyRequestCommand implements Command<ProxyResult> {
     private final AtomicBoolean invoked = new AtomicBoolean();
     private volatile boolean handedToProxy;
 
-    public ProxyRequestCommand(ProxyEngine engine, HttpServletRequest request,
+    public ProxyRequestCommand(CommandResilienceDecorator decorator, CommandProperties properties,
+                               ProxyEngine engine, HttpServletRequest request,
                                HttpServletResponse response, String rawPath) {
+        super(decorator, properties);
         this.engine = engine;
         this.request = request;
         this.response = response;
         this.rawPath = rawPath;
     }
 
-    @Override public CommandTask<ProxyResult> start() throws IOException {
+    @Override protected String getCommandName() { return ProxyCommands.NAME; }
+
+    @Override protected Mono<ProxyResult> fallbackOnError(Throwable failure) {
+        // Before handoff the HTTP adapter maps this failure. After handoff only the
+        // transport may complete or abort the response; no replacement body is written.
+        return Mono.error(failure);
+    }
+
+    @Override protected CommandTask<ProxyResult> doStart() throws IOException {
         if (!invoked.compareAndSet(false, true)) throw new IllegalStateException("Command is single-use");
         ProxyCall call = engine.forwardAsync(request, response, rawPath);
         handedToProxy = true;
-        // completion прокси приходит после всего тела и cleanup, не после возврата startAsync.
         CompletionStage<ProxyResult> completion = call.completion().thenCompose(result -> switch (result.outcome()) {
             case CANCELLED -> CompletableFuture.failedFuture(new CommandCancelledException("Client/exchange cancelled"));
             case LOCAL_REJECTION -> CompletableFuture.failedFuture(new CommandNotExecutedException("Proxy rejected locally"));
@@ -50,7 +62,7 @@ public final class ProxyRequestCommand implements Command<ProxyResult> {
         return new CommandTask<>() {
             @Override public CompletionStage<ProxyResult> completion() { return completion; }
             @Override public void cancel(CancellationReason reason) {
-                // Транспорт сериализует HTTP-завершение со своим I/O: timer thread не пишет response.
+                // Transport serializes completion with its I/O; the timer thread never writes HTTP.
                 call.cancel(reason == CancellationReason.TIMEOUT ? 504 : 503);
             }
         };

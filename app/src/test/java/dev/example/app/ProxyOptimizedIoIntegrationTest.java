@@ -3,7 +3,7 @@ package dev.example.app;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dev.example.proxy.transport.ProxyEngine;
-import dev.example.resilience.CommandExecutor;
+import dev.example.app.command.ProxyCommands;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.Filter;
 import jakarta.servlet.ServletOutputStream;
@@ -184,7 +184,7 @@ class ProxyOptimizedIoIntegrationTest {
         final ConfigurableApplicationContext application;
         final HttpClient client;
         final ProxyEngine engine;
-        final CommandExecutor<?> commands;
+        final ProxyCommands commands;
         final int port;
 
         Fixture() throws Exception {
@@ -207,7 +207,7 @@ class ProxyOptimizedIoIntegrationTest {
             Object webServer = application.getClass().getMethod("getWebServer").invoke(application);
             port = (int) webServer.getClass().getMethod("getPort").invoke(webServer);
             engine = application.getBean(ProxyEngine.class);
-            commands = application.getBean("proxyCommands", CommandExecutor.class);
+            commands = application.getBean("proxyCommands", ProxyCommands.class);
             client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
                     .connectTimeout(Duration.ofSeconds(3)).build();
         }

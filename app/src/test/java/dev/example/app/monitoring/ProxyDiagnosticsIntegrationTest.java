@@ -2,8 +2,7 @@ package dev.example.app.monitoring;
 
 import com.sun.net.httpserver.HttpServer;
 import dev.example.app.ProxyApplication;
-import dev.example.proxy.api.ProxyResult;
-import dev.example.resilience.CommandExecutor;
+import dev.example.app.command.ProxyCommands;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.net.InetSocketAddress;
@@ -77,7 +76,7 @@ class ProxyDiagnosticsIntegrationTest {
             assertTrue((long) server.getAttribute(registered, "ExchangeDurationNanosTotal") > 0);
             assertEquals(0L, server.getAttribute(registered, "ProxyFailedTotal"));
 
-            CommandExecutor<ProxyResult> commands = commands(application);
+            ProxyCommands commands = commands(application);
             assertTrue(commands.bulkhead().tryAcquirePermission());
             try {
                 assertFalse(commands.bulkhead().tryAcquirePermission());
@@ -159,8 +158,7 @@ class ProxyDiagnosticsIntegrationTest {
         return (int) webServer.getClass().getMethod("getPort").invoke(webServer);
     }
 
-    @SuppressWarnings("unchecked")
-    private static CommandExecutor<ProxyResult> commands(ConfigurableApplicationContext application) {
-        return application.getBean(CommandExecutor.class);
+    private static ProxyCommands commands(ConfigurableApplicationContext application) {
+        return application.getBean(ProxyCommands.class);
     }
 }
