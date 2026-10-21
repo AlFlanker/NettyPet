@@ -27,7 +27,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+/** Проверяет допуск, отмену и завершение команд, включая гонки запуска, таймера и очистки ресурсов. */
 class CommandExecutorTest {
+    /** Успех возвращает разрешение только после завершения задачи и подтверждения очистки. */
     @Test
     void successReleasesTheSlotOnlyAfterTaskCompletion() throws Exception {
         try (var executor = executor(1, Duration.ofMinutes(1))) {
@@ -44,6 +46,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Отказ CircuitBreaker не запускает команду и возвращает уже полученное разрешение Bulkhead. */
     @Test
     void openCircuitNeverStartsTheCommandAndReturnsBulkheadPermission() throws Exception {
         try (var executor = executor(1, Duration.ofMinutes(1))) {
@@ -61,6 +64,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Занятый Bulkhead отклоняет команду немедленно и без запуска действия. */
     @Test
     void overloadedBulkheadRejectsWithoutStartingOrWaiting() throws Exception {
         try (var executor = executor(1, Duration.ofMinutes(1))) {
@@ -76,6 +80,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Таймаут уведомляет задачу об отмене, но не освобождает её слот до фактической очистки. */
     @Test
     void timeoutCancelsTaskButKeepsSlotUntilActualCleanup() throws Exception {
         try (var executor = executor(1, Duration.ofMillis(40))) {
@@ -102,6 +107,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Таймер действует до запуска; отмена во время старта доставляется после возврата задачи. */
     @Test
     void timeoutIsArmedBeforeStartAndCancellationIsHandedToPublishedTask() throws Exception {
         try (var executor = executor(1, Duration.ofMillis(40));
@@ -136,6 +142,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Остановка во время старта запоминается и передаётся опубликованной задаче ровно один раз. */
     @Test
     void closeDuringStartHandsShutdownToTaskExactlyOnce() throws Exception {
         try (var executor = executor(1, Duration.ofMinutes(1))) {
@@ -157,6 +164,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Закрытие из обработчика допуска предотвращает запуск и не оставляет занятое разрешение. */
     @Test
     void closeFromAdmissionEventPreventsStartAndDoesNotLeakPermission() throws Exception {
         try (var executor = executor(1, Duration.ofMinutes(1))) {
@@ -168,6 +176,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Гонка закрытия с постановкой таймера остаётся локальной отменой без записи в статистику CircuitBreaker. */
     @Test
     void closeBetweenDeadlineCheckAndSchedulingRemainsAnIgnoredCancellation() throws Exception {
         try (var executor = executor(1, Duration.ofMinutes(1))) {
@@ -181,6 +190,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Отказ планировщика классифицируется как локальный отказ запуска, а не ошибка внешней операции. */
     @Test
     void unavailableSchedulerIsALocalRejectionRatherThanUpstreamFailure() throws Exception {
         try (var executor = executor(1, Duration.ofMinutes(1))) {
@@ -193,6 +203,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Повторная отмена не уведомляет задачу снова и не возвращает разрешение до очистки. */
     @Test
     void callerCancellationIsIdempotentAndDoesNotReleaseBeforeCleanup() throws Exception {
         try (var executor = executor(1, Duration.ofMinutes(1))) {
@@ -214,6 +225,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Отмена копий future не отменяет саму операцию и не подменяет её результат. */
     @Test
     void returnedFutureCopiesCannotCancelTheExecution() throws Exception {
         try (var executor = executor(1, Duration.ofMinutes(1))) {
@@ -230,6 +242,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Ранняя ошибка удаляет длинный таймер, чтобы завершённые операции не удерживались в очереди. */
     @Test
     void exceptionalCompletionRemovesLongDeadlineFromSchedulerQueue() throws Exception {
         try (var executor = executor(1, Duration.ofHours(1))) {
@@ -247,6 +260,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Исключение до публикации задачи освобождает слот и удаляет её таймер. */
     @Test
     void startExceptionReleasesSlotAndCancelsItsTimer() throws Exception {
         try (var executor = executor(1, Duration.ofHours(1))) {
@@ -259,6 +273,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Error из запуска пробрасывается только после возврата разрешения и удаления таймера. */
     @Test
     void startErrorIsRethrownAfterPermitAndTimerCleanup() {
         try (var executor = executor(1, Duration.ofHours(1))) {
@@ -270,6 +285,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Асинхронные обёртки не превращают исключённые локальные исходы в успешные вызовы CircuitBreaker. */
     @Test
     void wrappedLocalFailuresAreIgnoredRatherThanRecordedAsSuccesses() throws Exception {
         try (var executor = executor(1, Duration.ofMinutes(1))) {
@@ -290,6 +306,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Исключённые исходы в HALF_OPEN возвращают пробное разрешение без добавления записи в статистику. */
     @Test
     void ignoredHalfOpenCancellationAndTimeoutReturnProbePermissionWithoutSamples() throws Exception {
         for (boolean callerCancellation : new boolean[]{true, false}) {
@@ -320,8 +337,8 @@ class CommandExecutorTest {
                 assertEquals(0, breaker.getMetrics().getNumberOfFailedCalls());
                 assertEquals(1, available(executor));
 
-                // Единственный probe-slot должен вернуться после ignore, иначе следующий
-                // запуск получит CallNotPermittedException и HALF_OPEN останется навсегда.
+                // Единственное разрешение пробного вызова должно вернуться после исключённого из статистики исхода, иначе следующий
+                // запуск получит CallNotPermittedException и проверка восстановления больше не выполнится.
                 var recoveredTask = new ManualTask();
                 recoveredTask.completion.complete("recovered");
                 var recovered = executor.execute(() -> recoveredTask);
@@ -333,6 +350,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Закрытие запрашивает очистку всех активных задач и отклоняет новые команды. */
     @Test
     void closeRequestsCleanupForEveryActiveTaskAndRejectsNewCommands() throws Exception {
         try (var executor = executor(2, Duration.ofMinutes(1))) {
@@ -357,6 +375,7 @@ class CommandExecutorTest {
         }
     }
 
+    /** Ожидание разрешения запрещено, чтобы исполнитель не блокировал вызывающий поток. */
     @Test
     void waitingBulkheadIsRejectedAtConstruction() {
         assertThrows(IllegalArgumentException.class, () -> new CommandExecutor<>("blocking",
@@ -364,6 +383,7 @@ class CommandExecutorTest {
                 TimeLimiterConfig.ofDefaults(), CircuitBreakerConfig.ofDefaults()));
     }
 
+    /** Переполнение наносекундного бюджета отклоняется до создания ресурсов выполнения. */
     @Test
     void overflowingDeadlineIsRejectedBeforeCreatingExecutionResources() {
         var timeout = TimeLimiterConfig.custom().timeoutDuration(Duration.ofSeconds(Long.MAX_VALUE)).build();
@@ -389,7 +409,7 @@ class CommandExecutorTest {
     }
 
     private static void rejectScheduling(CommandExecutor<?> executor, boolean closeFirst) throws Exception {
-        // Подменяем только в тесте: production API не содержит точки остановки scheduler.
+        // Подмена доступна только тесту: рабочий API не позволяет остановить планировщик отдельно от исполнителя.
         var field = CommandExecutor.class.getDeclaredField("scheduler");
         field.setAccessible(true);
         var original = (ScheduledThreadPoolExecutor) field.get(executor);

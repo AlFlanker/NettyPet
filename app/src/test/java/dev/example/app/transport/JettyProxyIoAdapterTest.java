@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+/** Проверяет выбор пути I/O и возврат владения буфером только по уведомлению Jetty. */
 class JettyProxyIoAdapterTest {
     private final JettyProxyIoAdapter adapter = JettyProxyIoAdapter.INSTANCE;
 

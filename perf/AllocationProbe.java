@@ -25,7 +25,10 @@ import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordedFrame;
 import jdk.jfr.consumer.RecordingFile;
 
-/** Measurement-only agent. Never add this agent to a production launch command. */
+/**
+ * Измерительный Java-агент для локального сравнения выделений памяти.
+ * Подключается только к экспериментальному запуску, а не к рабочему приложению.
+ */
 public final class AllocationProbe {
     private static final ThreadMXBean THREADS = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     private static Recording recording;
@@ -34,6 +37,10 @@ public final class AllocationProbe {
     private static Path recordingPath;
     private static long controlThread;
 
+    /**
+     * Включает счётчики памяти потоков и локальный канал команд START/STOP для стенда.
+     * Один управляющий поток последовательно меняет состояние записи JFR и снимков счётчиков.
+     */
     public static void premain(String outputDirectory, Instrumentation unused) throws Exception {
         Path directory = Path.of(outputDirectory).toAbsolutePath();
         Files.createDirectories(directory);
@@ -62,6 +69,7 @@ public final class AllocationProbe {
                         recording.enable("jdk.GarbageCollection");
                         recording.setMaxSize(128L * 1024 * 1024);
                         recording.start();
+                        // Снимок после запуска JFR исключает его первоначальную настройку из дельты.
                         before = allocated();
                         started = System.nanoTime();
                         answer = Map.of("started", true);
@@ -72,6 +80,8 @@ public final class AllocationProbe {
                         long bytes = 0;
                         int created = 0;
                         List<Map<String, Object>> perThread = new ArrayList<>();
+                        // Считаем дельты только потоков, доступных в конечном снимке. Для нового
+                        // потока начальное значение принимается за ноль; умершие потоки не учтены.
                         for (var item : after.entrySet()) {
                             Long previous = before.get(item.getKey());
                             if (previous == null) created++;
@@ -103,6 +113,10 @@ public final class AllocationProbe {
         thread.start();
     }
 
+    /**
+     * Снимает доступные счётчики выделенной памяти живых платформенных потоков.
+     * Управляющий поток исключён, чтобы обработка измерительных команд не увеличивала итог.
+     */
     private static Map<Long, Long> allocated() {
         long[] ids = THREADS.getAllThreadIds();
         long[] bytes = THREADS.getThreadAllocatedBytes(ids);
@@ -113,7 +127,10 @@ public final class AllocationProbe {
         return result;
     }
 
-    /** Run in a separate JVM after measurement; parsing cannot pollute allocation counters. */
+    /**
+     * Разбирает готовую запись JFR в отдельной JVM после измерения.
+     * Выделения памяти парсером поэтому не попадают в счётчики исследуемого процесса.
+     */
     public static void main(String[] args) throws Exception {
         if (args.length != 1) throw new IllegalArgumentException("Expected one JFR filename");
         Map<String, long[]> groups = new HashMap<>();
@@ -146,8 +163,8 @@ public final class AllocationProbe {
                     }
                 }
                 if (type.equals("jdk.ObjectAllocationSample")) {
-                    // A thread's first weight may include allocations before Recording.start().
-                    // Discard it; samples are stack evidence, not an exact per-window total.
+                    // Вес первой выборки потока может включать выделения памяти до запуска записи JFR.
+                    // Пропускаем её: выборки указывают места выделений, а не точный объём за окно.
                     if (event.getThread() != null && sampledThreads.add(event.getThread().getJavaThreadId())) {
                         discardedInitialSamples++;
                         continue;
@@ -180,6 +197,7 @@ public final class AllocationProbe {
                 "gcCount", gcCount, "gcPauseNanos", gcPauseNanos)));
     }
 
+    /** Сериализует используемые в отчёте строки, числа, логические значения, карты и списки. */
     private static String json(Object value) {
         if (value == null) return "null";
         if (value instanceof String text) return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r") + "\"";

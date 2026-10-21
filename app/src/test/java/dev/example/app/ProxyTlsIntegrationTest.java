@@ -43,9 +43,10 @@ import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Real TLS verifies the production JDK trust manager and HTTPS hostname checks.
- * No trust-all manager or production TLS customization is installed. Fresh certificates
- * avoid expiry of checked-in fixtures; process-wide trust properties are restored.
+ * Проверяет штатную проверку доверия JDK и имени HTTPS-сервера через настоящее TLS-соединение.
+ * Тест не отключает проверку сертификатов и не меняет производственную TLS-конфигурацию.
+ * Сертификаты создаются заново, чтобы не зависеть от срока действия сохранённых образцов;
+ * глобальные настройки доверия процесса восстанавливаются после проверки.
  */
 @Timeout(30)
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
@@ -104,7 +105,7 @@ class ProxyTlsIntegrationTest {
 
     @Test
     void trustedCertificateForDifferentHostnameIsRejectedBeforeHttpReachesUpstream() throws Exception {
-        // The trusted certificate has only DNS:localhost, deliberately no IP SAN.
+        // Доверенный сертификат содержит только DNS:localhost, без IP-адреса в SAN.
         assertTlsRejected(trustedServer, "127.0.0.1");
     }
 

@@ -9,6 +9,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/** Проверяет синхронное продолжение цепочки и сохранение окончательного отказа любого процессора. */
 class ProcessorPipelineTest {
     private final IncomingRequest incoming = new IncomingRequest("POST", "/x", null, Map.of(), "127.0.0.1");
     private final ProxyRequest outgoing = new ProxyRequest(URI.create("http://localhost/x"), new Headers());

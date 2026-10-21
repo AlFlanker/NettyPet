@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+/** Проверяет неизменяемый план запроса и правила длины тела перед передачей владения транспорту. */
 class PreparedRequestTest {
     @Test
     void snapshotFreezesUriAndRepeatedHeadersBeforeNetworkIo() {

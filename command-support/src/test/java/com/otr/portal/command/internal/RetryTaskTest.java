@@ -24,7 +24,9 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/** Проверяет последовательность повторов, доставку отмены и учёт исходов в штатных метриках Resilience4j. */
 class RetryTaskTest {
+    /** Повтор и последующий успех отражаются штатными событиями и счётчиками Resilience4j. */
     @Test void usesNativeRetryEventsAndSuccessMetrics() throws Exception {
         var scheduler = CommandExecutor.newScheduler("retry-test");
         var retryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
@@ -45,6 +47,7 @@ class RetryTaskTest {
         } finally { scheduler.shutdownNow(); retryExecutor.shutdownNow(); }
     }
 
+    /** Отмена во время создания повторной задачи доставляется один раз после публикации её объекта управления. */
     @Test void cancellationDuringRetryStartIsDeliveredOnceAfterTaskPublication() throws Exception {
         var scheduler = CommandExecutor.newScheduler("retry-start-race");
         var entered = new CountDownLatch(1);
@@ -87,6 +90,7 @@ class RetryTaskTest {
         } finally { release.countDown(); scheduler.shutdownNow(); retryExecutor.shutdownNow(); }
     }
 
+    /** Ошибка Error при асинхронном повторе завершает результат и освобождает внешний слот. */
     @Test void fatalErrorInAsynchronousRetryCompletesExecutionAndReleasesPermit() throws Exception {
         var scheduler = CommandExecutor.newScheduler("retry-fatal");
         var retryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
@@ -109,6 +113,7 @@ class RetryTaskTest {
         } finally { scheduler.shutdownNow(); retryExecutor.shutdownNow(); }
     }
 
+    /** Неповторяемая ошибка завершает первую попытку и учитывается как отказ без повтора. */
     @Test void nonRetryableFailureNeverStartsASecondAttemptAndUpdatesNativeMetrics() throws Exception {
         var scheduler = CommandExecutor.newScheduler("retry-ignore");
         var retryExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();

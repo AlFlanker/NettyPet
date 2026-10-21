@@ -6,6 +6,7 @@ import java.net.URI;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/** Проверяет сохранение исходного кодирования URI и запрет смены узла через данные пути. */
 class UpstreamUriTest {
     @Test
     void preservesEscapesRepeatedQueryParametersAndEmptyValues() {

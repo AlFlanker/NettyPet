@@ -14,7 +14,8 @@ import org.slf4j.LoggerFactory;
 /**
  * Потокобезопасный фасад библиотеки. Один экземпляр на приложение, а не на запрос.
  * Приложение выбирает маршрут; библиотека владеет телами, пулами и завершением обмена.
- * После forward() приложение не должно обращаться к request/response или продолжать filter chain.
+ * После передачи владения прокси приложение не должно обращаться к request/response
+ * или продолжать цепочку Servlet-фильтров.
  */
 public final class ProxyEngine implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(ProxyEngine.class);
@@ -23,12 +24,13 @@ public final class ProxyEngine implements AutoCloseable {
     private final ProcessorPipeline processors;
     private final ProxyMetrics metrics = new ProxyMetrics();
 
+    /** Создаёт фасад со стандартным Servlet I/O; прерывание ответа предоставляет приложение. */
     public ProxyEngine(ProxyOptions config, List<RequestProcessor> processors,
                        DownstreamAborter downstreamAborter) throws Exception {
         this(config, processors, downstreamAborter, ProxyIoAdapter.PORTABLE);
     }
 
-    /** Оптимизированный I/O адаптер задаёт приложение; прежний конструктор переносим. */
+    /** Создаёт фасад с выбранным приложением адаптером I/O и общей инфраструктурой сетевых ресурсов. */
     public ProxyEngine(ProxyOptions config, List<RequestProcessor> processors,
                        DownstreamAborter downstreamAborter, ProxyIoAdapter ioAdapter) throws Exception {
         this.config = Objects.requireNonNull(config);
@@ -37,16 +39,16 @@ public final class ProxyEngine implements AutoCloseable {
         this.transport = new NettyTransport(config, downstreamAborter, ioAdapter);
     }
 
-    /** rawPath — raw origin-form путь без префикса приложения; query читается отдельно. */
+    /** Запускает обмен без возврата объекта управления; rawPath — исходный путь без префикса приложения и строки параметров. */
     public void forward(HttpServletRequest request, HttpServletResponse response, String rawPath) throws IOException {
         forwardAsync(request, response, rawPath);
     }
 
     /**
-     * Передаёт владение request/response прокси и возвращает управление без ожидания тела.
-     * completion подтверждает освобождение ресурсов всего обмена, включая pending acquire;
-     * получение response headers ещё не считается завершением streaming-операции.
-     * Синхронный отказ подготовки возвращается уже завершённым LOCAL_REJECTION.
+     * Передаёт владение request/response прокси и возвращает объект управления без ожидания передачи тела.
+     * Его completion подтверждает очистку всего обмена, включая ожидаемое получение канала;
+     * получение заголовков ответа не означает завершение потоковой операции.
+     * При синхронном отказе подготовки возвращает объект управления с завершённым LOCAL_REJECTION.
      */
     public ProxyCall forwardAsync(HttpServletRequest request, HttpServletResponse response, String rawPath) throws IOException {
         if (request.getMethod().equalsIgnoreCase("CONNECT") || request.getHeader("Upgrade") != null) {
@@ -80,8 +82,8 @@ public final class ProxyEngine implements AutoCloseable {
                 plan = new ProxyRequest(UpstreamUri.resolve(config.upstream(), incoming.rawPath(), incoming.rawQuery()),
                         HeaderRules.request(headers));
             } catch (IllegalArgumentException malformed) {
-                // Некорректные входящие метаданные — ошибка клиента. Ошибка Processor
-                // ниже остаётся 500, чтобы не скрывать дефекты прикладного расширения.
+                // Некорректные входящие метаданные — ошибка клиента. Ошибка расширения
+                // на следующем этапе остаётся 500, чтобы не скрывать дефект прикладного кода.
                 throw new ProxyRejection(400, "Malformed request metadata");
             }
             processors.execute(incoming, plan);
@@ -89,20 +91,20 @@ public final class ProxyEngine implements AutoCloseable {
             if (!transport.permits(Origin.from(prepared.uri()))) throw new ProxyRejection(403, "Upstream origin not allowed");
             async = request.startAsync(request, response);
             exchange = new ProxyExchange(transport, config, async, request, response, prepared, metrics);
-            // После присваивания admission принадлежит exchange, включая сбой start().
+            // После создания exchange он отвечает за возврат слота допуска, включая сбой start().
             exchange.start();
             return exchange;
         } catch (Exception failure) {
             log.debug("Proxy preparation failed", failure);
-            // start() сам завершает уже принадлежащий ему AsyncContext. Повторный
-            // reject здесь мог бы обратиться к recycled response после callback.
+            // start() сам завершает переданный ему AsyncContext. Повторный отказ здесь
+            // мог бы обратиться к response, который контейнер уже завершил и переиспользовал.
             if (exchange != null) return exchange;
             int status = failure instanceof ProxyRejection rejection ? rejection.status() : 500;
             try { reject(response, status); }
             finally {
                 if (async != null) {
                     try { async.complete(); }
-                    catch (IllegalStateException ignored) { /* Container completion won the race. */ }
+                    catch (IllegalStateException ignored) { /* Контейнер уже завершил AsyncContext. */ }
                 }
             }
             return rejectedCall(status);
@@ -117,8 +119,8 @@ public final class ProxyEngine implements AutoCloseable {
             }
             throw fatal;
         } finally {
-            // finally обязателен: catch(Exception) не освобождает слот при Error из
-            // Processor или конструктора exchange. До передачи владения отвечает фасад.
+            // finally обязателен: catch(Exception) не возвращает слот при Error
+            // из расширения или конструктора exchange. До создания обмена за слот отвечает фасад.
             if (exchange == null) transport.releaseAdmission();
         }
     }
@@ -126,11 +128,13 @@ public final class ProxyEngine implements AutoCloseable {
     /** Снимок счётчиков без URI/host-меток: кардинальность не зависит от пользовательских данных. */
     public ProxyMetrics.Snapshot metrics() { return metrics.snapshot(); }
 
-    /** Включает занятые admission-слоты, в том числе отменённые запросы с незавершённым acquire. */
+    /** Возвращает число занятых слотов допуска, включая отменённые запросы, ожидающие результат получения канала. */
     public int activeRequests() { return transport.activeRequests(); }
 
+    /** Прекращает приём запросов и освобождает сетевые ресурсы; вызывается из потока жизненного цикла приложения. */
     @Override public void close() { transport.close(); }
 
+    /** Формирует отказ без тела и запрещает повторное использование клиентского соединения. */
     private void reject(HttpServletResponse response, int status) {
         metrics.rejected(status);
         response.setStatus(status);
@@ -138,6 +142,7 @@ public final class ProxyEngine implements AutoCloseable {
         response.setContentLength(0);
     }
 
+    /** Создаёт завершённый результат локального отказа, не владеющий сетевыми ресурсами. */
     private static ProxyCall rejectedCall(int status) {
         return new FinishedCall(CompletableFuture.completedFuture(
                 new ProxyResult(status, ProxyResult.Outcome.LOCAL_REJECTION)).minimalCompletionStage());

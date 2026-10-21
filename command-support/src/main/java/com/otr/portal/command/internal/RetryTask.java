@@ -18,9 +18,10 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
- * One logical resource task across replayable attempts. An attempt's completion is
- * its cleanup acknowledgement, so the next attempt never overlaps previous cleanup.
- * The outer executor supplies the single admission permit, CB sample and deadline.
+ * Объединяет повторяемые попытки в одну ресурсную задачу.
+ * Завершение попытки подтверждает её очистку, поэтому следующая начинается только после него.
+ * Внешний исполнитель удерживает общий слот Bulkhead, учитывает один исход в CircuitBreaker
+ * и ограничивает все попытки единым предельным сроком.
  */
 public final class RetryTask<T> implements CommandTask<T> {
     private static final System.Logger LOG = System.getLogger(RetryTask.class.getName());
@@ -47,6 +48,10 @@ public final class RetryTask<T> implements CommandTask<T> {
         this.scope = Objects.requireNonNull(scope, "scope");
     }
 
+    /**
+     * Создаёт общую задачу и запускает первую попытку на вызывающем потоке.
+     * Это сохраняет синхронную передачу владения для операций вроде Servlet startAsync().
+     */
     public static <T> CommandTask<T> start(CommandAction<T> action, Retry retry,
                                           ScheduledThreadPoolExecutor scheduler,
                                           Executor retryExecutor, CommandScope scope) {
@@ -55,6 +60,10 @@ public final class RetryTask<T> implements CommandTask<T> {
         return task;
     }
 
+    /**
+     * Проверяет общий срок перед вызовом действия, в том числе после ожидания в очереди работников.
+     * Флаг starting не даёт принять отмену во время получения объекта CommandTask за подтверждение очистки.
+     */
     private void startAttempt() {
         if (!checkScope()) return;
         synchronized (this) {
@@ -89,8 +98,8 @@ public final class RetryTask<T> implements CommandTask<T> {
             Objects.requireNonNull(task.completion(), "CommandTask.completion() returned null")
                     .whenComplete(this::attemptCompleted);
         } catch (RuntimeException | Error brokenContract) {
-            // No cleanup acknowledgement exists: do not release this logical task.
-            // Cancellation remains best-effort and the outer deadline still reports failure.
+            // Подтверждения очистки нет: не завершаем общую задачу и не возвращаем её слот.
+            // Пытаемся передать отмену; внешний срок всё равно ограничивает ожидание результата.
             LOG.log(System.Logger.Level.ERROR, "CommandTask completion contract violated", brokenContract);
             cancel(CancellationReason.CALLER);
             return;
@@ -98,6 +107,10 @@ public final class RetryTask<T> implements CommandTask<T> {
         deliverCancellation();
     }
 
+    /**
+     * Обрабатывает результат уже очищенной попытки и спрашивает Retry о следующем шаге.
+     * Повтор планируется только после этого сигнала, поэтому ресурсы соседних попыток не перекрываются.
+     */
     private void attemptCompleted(T value, Throwable failure) {
         CancellationReason reason;
         synchronized (this) {
@@ -135,6 +148,10 @@ public final class RetryTask<T> implements CommandTask<T> {
         }
     }
 
+    /**
+     * Передаёт повтор в ограниченный рабочий пул, не выполняя действие команды на потоке таймера.
+     * Переполненная или закрытая очередь даёт локальный отказ без нового обращения к внешней системе.
+     */
     private void dispatchAttempt() {
         if (!checkScope()) return;
         try {
@@ -144,6 +161,10 @@ public final class RetryTask<T> implements CommandTask<T> {
         }
     }
 
+    /**
+     * Проверяет общее состояние и переносит его отмену в задачу повторов.
+     * Проверка нужна и до публикации этой обёртки внешнему исполнителю.
+     */
     private boolean checkScope() {
         if (scope.isActive()) return true;
         var reason = scope.cancellationReason();
@@ -153,6 +174,11 @@ public final class RetryTask<T> implements CommandTask<T> {
 
     @Override public CompletionStage<T> completion() { return completionView; }
 
+    /**
+     * Отменяет ожидание повтора либо запрашивает остановку текущей попытки.
+     * Если объект CommandTask ещё создаётся, сохраняет отмену и передаёт её после публикации.
+     * Метод не ждёт завершения запуска или очистки ресурсов.
+     */
     @Override public void cancel(CancellationReason reason) {
         boolean idle;
         synchronized (this) {
@@ -168,6 +194,7 @@ public final class RetryTask<T> implements CommandTask<T> {
         else deliverCancellation();
     }
 
+    /** Передаёт сохранённую причину отмены текущей попытке один раз, не удерживая монитор во время обратного вызова. */
     private void deliverCancellation() {
         CommandTask<T> task;
         CancellationReason reason;
@@ -184,6 +211,7 @@ public final class RetryTask<T> implements CommandTask<T> {
         }
     }
 
+    /** Один раз завершает общую задачу, когда активная попытка уже отсутствует или подтвердила очистку. */
     private void finish(T value, Throwable failure) {
         synchronized (this) {
             if (finished) return;

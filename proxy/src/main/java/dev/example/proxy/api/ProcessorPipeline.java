@@ -4,8 +4,9 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Неизменяемая цепочка, общая для всех запросов. Состояние одного выполнения никогда
- * не хранится в экземплярах Processor: они могут вызываться разными servlet-потоками.
+ * Неизменяемая цепочка, общая для всех запросов. Состояние отдельного выполнения
+ * хранится вне процессоров: один процессор может одновременно вызываться разными
+ * потоками Servlet-контейнера.
  */
 public final class ProcessorPipeline {
     private final List<RequestProcessor> processors;
@@ -29,13 +30,14 @@ public final class ProcessorPipeline {
             execution.recordFailure(failure);
         }
         // Достижение конца цепочки ещё не разрешает отправку: процессор может отклонить
-        // запрос ПОСЛЕ proceed(), а внешний interceptor — по ошибке проглотить исключение.
+        // запрос после proceed(), а внешний обработчик — по ошибке перехватить исключение.
         execution.rethrowFailure();
         if (!execution.completed) {
             throw new IllegalStateException("Processor chain did not reach completion");
         }
     }
 
+    /** Вызывает очередной процессор и выдаёт ему продолжение только на время синхронного вызова. */
     private void invoke(int index, IncomingRequest incoming, ProxyRequest outgoing, Execution execution) throws Exception {
         if (index == processors.size()) {
             execution.completed = true;
@@ -46,6 +48,7 @@ public final class ProcessorPipeline {
             private boolean proceeded;
             private boolean active = true;
 
+            /** Продвигает цепочку один раз с исходного потока; нарушение сохраняется как окончательный отказ. */
             @Override
             public void proceed() throws Exception {
                 if (Thread.currentThread() != owner || !active || proceeded) {
@@ -84,6 +87,7 @@ public final class ProcessorPipeline {
             }
         }
 
+        /** Повторно выбрасывает сохранённую причину, даже если её перехватил внешний процессор. */
         void rethrowFailure() throws Exception {
             Throwable cause = failure;
             if (cause instanceof Exception exception) throw exception;

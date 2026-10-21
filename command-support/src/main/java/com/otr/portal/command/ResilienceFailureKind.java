@@ -1,7 +1,7 @@
 package com.otr.portal.command;
 
 /**
- * Причина срабатывания Resilience4j-fallback.
+ * Вид сбоя команды для понятного сообщения при резервной обработке.
  */
 public enum ResilienceFailureKind {
     TIMEOUT,

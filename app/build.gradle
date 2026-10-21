@@ -12,7 +12,7 @@ dependencies {
     }
     implementation 'org.springframework.boot:spring-boot-starter-jetty'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    // Exercise the real facade's fatal-start path while controlling its internal EventLoop.
+    // Проверяем аварийный запуск настоящего фасада, управляя его внутренним EventLoop в тесте.
     testImplementation 'io.netty:netty-transport'
 }
 

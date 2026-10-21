@@ -33,9 +33,13 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Scheduler pauses are controlled here; application start/cancel remain nonblocking in production. */
+/**
+ * Проверяет общий срок выполнения при управляемых задержках таймера и публикации задачи.
+ * Ожидания моделируют гонки только в тестах; рабочие start() и cancel() не должны блокировать поток.
+ */
 @Timeout(10)
 class DeadlineScopeRegressionTest {
+    /** Если очистка завершилась после общего срока, результат остаётся таймаутом даже при задержке таймера. */
     @Test void delayedTimerCannotTurnLateCleanupIntoSuccess() throws Exception {
         try (Fixture f = fixture(Duration.ofMillis(80), false)) {
             CountDownLatch release = pauseScheduler(f.scheduler());
@@ -56,6 +60,7 @@ class DeadlineScopeRegressionTest {
         }
     }
 
+    /** Возобновление задержанной очереди не разрешает повтор после общего срока команды. */
     @Test void overdueRetryCannotStartBeforeAnOverdueTimeoutWhenSchedulerResumes() throws Exception {
         try (Fixture f = fixture(Duration.ofMillis(80), true)) {
             CountDownLatch release = pauseScheduler(f.scheduler());
@@ -80,6 +85,7 @@ class DeadlineScopeRegressionTest {
         }
     }
 
+    /** Таймаут до возврата первой задачи запоминает отмену и удерживает политику до её очистки. */
     @Test void timeoutDuringFirstTaskPublicationPreventsAnotherAttemptAndRetainsCleanupLease() throws Exception {
         try (Fixture f = fixture(Duration.ofMillis(80), true);
              var caller = Executors.newSingleThreadExecutor()) {
@@ -114,6 +120,7 @@ class DeadlineScopeRegressionTest {
         }
     }
 
+    /** Время допуска входит в общий бюджет: просроченная первая попытка не запускается. */
     @Test void expiredAdmissionDoesNotStartTheInitialAttemptEvenWhenTimerWasNotArmed() throws Exception {
         try (Fixture f = fixture(Duration.ofMillis(80), false);
              var caller = Executors.newSingleThreadExecutor()) {
@@ -143,6 +150,7 @@ class DeadlineScopeRegressionTest {
         }
     }
 
+    /** Очередь занятых рабочих потоков не задерживает таймаут и не запускает просроченный повтор. */
     @Test void retryQueuedBehindBusyWorkersCannotBlockItsDeadlineOrStartAfterIt() throws Exception {
         try (Fixture f = fixture(Duration.ofMillis(80), true)) {
             var workers = f.workers();
@@ -169,6 +177,7 @@ class DeadlineScopeRegressionTest {
         }
     }
 
+    /** Переполненный пул даёт локальный отказ; остановка освобождает ещё не начатые повторы. */
     @Test void retryWorkerSaturationIsLocalAndShutdownReleasesQueuedRetryLeases() throws Exception {
         var policy = policy(Duration.ofSeconds(3), true).toBuilder().maxConcurrency(2).build();
         try (Fixture f = new Fixture(policy)) {
@@ -187,7 +196,7 @@ class DeadlineScopeRegressionTest {
                     starts.incrementAndGet();
                     return failed(new RetryableException("queue retry"));
                 });
-                // Runs after the zero-delay dispatch, proving the single worker queue is occupied.
+                // Барьер в очереди таймера дожидается отправки повтора в уже занятую очередь рабочего потока.
                 f.scheduler().schedule(() -> { }, 30, TimeUnit.MILLISECONDS).get(3, TimeUnit.SECONDS);
                 assertEquals(1, workers.getQueue().size());
                 var rejected = f.decorator.start(f.context, () -> {
@@ -217,9 +226,11 @@ class DeadlineScopeRegressionTest {
         return assertThrows(ExecutionException.class,
                 () -> execution.result().toCompletableFuture().get(3, TimeUnit.SECONDS)).getCause();
     }
+    /** Даёт истечь короткому бюджету, не полагаясь на запуск остановленного таймера. */
     private static void elapseBudget() throws InterruptedException {
         assertFalse(new CountDownLatch(1).await(180, TimeUnit.MILLISECONDS));
     }
+    /** Занимает поток таймера и возвращает сигнал, которым тест разрешит ему продолжить работу. */
     private static CountDownLatch pauseScheduler(ScheduledThreadPoolExecutor scheduler) throws Exception {
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -231,6 +242,7 @@ class DeadlineScopeRegressionTest {
         try { latch.await(3, TimeUnit.SECONDS); }
         catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
     }
+    /** Даёт тесту доступ к внутренним исполнителям без расширения рабочего API ради гонок. */
     private static Field field(String name) throws Exception {
         Field field = CommandResilienceDecorator.class.getDeclaredField(name);
         field.setAccessible(true);

@@ -18,6 +18,7 @@ import java.util.concurrent.ExecutionException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/** Проверяет классификацию причин отказа, включая вложенные и циклические цепочки исключений. */
 class ResilienceFailureResolverTest {
 
     @Test

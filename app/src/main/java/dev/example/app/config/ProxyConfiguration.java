@@ -14,9 +14,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 
+/** Соединяет переносимый транспорт, расширения приложения и адаптер I/O контейнера Jetty. */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(ProxyProperties.class)
 public class ProxyConfiguration {
+    /** Создаёт общий движок; адаптер Jetty прерывает начатый ответ при ошибке передачи тела. */
     @Bean(destroyMethod = "close")
     ProxyEngine proxyEngine(ProxyProperties properties, ObjectProvider<RequestProcessor> processors) throws Exception {
         return new ProxyEngine(properties.toOptions(), processors.orderedStream().toList(),
@@ -24,6 +26,7 @@ public class ProxyConfiguration {
                         .getServletChannel().abort(failure), JettyProxyIoAdapter.INSTANCE);
     }
 
+    /** Регистрирует маршрутизацию только первичного запроса, сохраняя поддержку Servlet async. */
     @Bean
     FilterRegistrationBean<ProxyFilter> proxyFilter(ProxyRequestHandler handler) {
         var registration = new FilterRegistrationBean<>(new ProxyFilter(handler));
@@ -31,8 +34,8 @@ public class ProxyConfiguration {
         registration.addUrlPatterns("/*");
         registration.setDispatcherTypes(DispatcherType.REQUEST);
         registration.setAsyncSupported(true);
-        // Раньше фильтров, разбирающих тело. Аутентификацию приложения при её добавлении
-        // нужно расположить ещё раньше: proxy завершает цепочку для своего маршрута.
+        // Фильтр должен работать до разбора тела запроса. Фильтр аутентификации, если он нужен,
+        // размещают ещё раньше: прокси не продолжает цепочку для принятого им маршрута.
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 10);
         return registration;
     }

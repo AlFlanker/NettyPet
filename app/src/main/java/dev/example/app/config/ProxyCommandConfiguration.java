@@ -18,13 +18,14 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.context.annotation.Import;
 
-/** The application alone defines which transport results indicate upstream failure. */
+/** Настраивает политику команд и определяет, какие результаты означают отказ целевого сервера. */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(ProxyCommandProperties.class)
 @Import({ResilienceRegistryConfig.class, CommandConfigRegistry.class, CommandResilienceDecorator.class})
 public class ProxyCommandConfiguration {
+    /** Задаёт общую группу команд прокси с ограничением конкуренции и классификацией отказов. */
     @Bean(destroyMethod = "close")
-    @DependsOn("proxyEngine") // Cancel commands before stopping their I/O owner.
+    @DependsOn("proxyEngine") // Отменяем команды до остановки транспорта, которому принадлежат их I/O-ресурсы.
     ProxyCommands proxyCommands(ProxyCommandProperties properties, CommandConfigRegistry registry,
                                 CommandResilienceDecorator decorator) {
         CircuitBreakerConfig circuitBreaker = CircuitBreakerConfig.custom()
@@ -35,8 +36,8 @@ public class ProxyCommandConfiguration {
                 .waitDurationInOpenState(properties.waitDurationInOpenState())
                 .permittedNumberOfCallsInHalfOpenState(properties.permittedCallsInHalfOpenState())
                 .automaticTransitionFromOpenToHalfOpenEnabled(false)
-                // Total streaming time also depends on the client/body size. Unlike an
-                // upstream header timeout, its expiry does not prove backend failure.
+                // Общая длительность обмена зависит от клиента и размера тела. В отличие от таймаута
+                // заголовков целевого сервера, её истечение само по себе не доказывает отказ сервера.
                 .ignoreExceptions(CommandCancelledException.class, CommandNotExecutedException.class,
                         TimeoutException.class)
                 .recordResult(result -> result instanceof ProxyResult proxy &&
@@ -49,13 +50,14 @@ public class ProxyCommandConfiguration {
                 .timeout(properties.timeout())
                 .maxConcurrency(properties.maxConcurrent())
                 .circuitBreakerConfig(circuitBreaker)
-                // A Servlet request body cannot be replayed. Never retry this command.
+                // Прочитанное тело Servlet-запроса нельзя воспроизвести; повтор команды запрещён.
                 .maxAttempts(1)
                 .replayable(false)
                 .build();
         return new ProxyCommands(registry, decorator, policy);
     }
 
+    /** Связывает транспорт с политикой команды и HTTP-преобразованием отказов до передачи владения. */
     @Bean
     ProxyRequestHandler proxyRequestHandler(ProxyEngine engine, ProxyCommands proxyCommands) {
         return new ProxyRequestHandler(engine, proxyCommands);

@@ -5,9 +5,9 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * Неизменяемые лимиты экземпляра proxy; не зависят от системы конфигурации приложения.
- * responseBufferBytes ограничивает payload очереди, а не весь heap/direct memory:
- * Netty allocator, TLS, HTTP metadata и socket buffers учитываются отдельно.
+ * Неизменяемые лимиты экземпляра прокси, не зависящие от конфигурационного механизма приложения.
+ * responseBufferBytes ограничивает полезные данные очереди ответа. Память распределителя
+ * Netty, TLS, метаданных HTTP и сокетных буферов в этот предел не входит.
  */
 public record ProxyOptions(
         URI upstream,
@@ -23,6 +23,7 @@ public record ProxyOptions(
         Duration exchangeTimeout,
         Duration idleConnectionTimeout,
         List<URI> allowedOrigins) {
+    /** Проверяет диапазоны лимитов и таймаутов, фиксирует копию списка дополнительных назначений. */
     public ProxyOptions {
         if (ioThreads < 1 || maxConcurrent < 1 || connectionsPerOriginPerLoop < 1 || pendingAcquiresPerPool < 1)
             throw new IllegalArgumentException("Concurrency settings must be positive");
@@ -36,7 +37,7 @@ public record ProxyOptions(
         if (allowedOrigins.size() > 32) throw new IllegalArgumentException("At most 32 extra origins");
     }
 
-    /** Совместимость прежних вызовов: ожидание final headers после upload ограничено 10 секундами. */
+    /** Сохраняет прежний конструктор: ожидание финальных заголовков после отправки тела равно 10 секундам. */
     public ProxyOptions(URI upstream, int ioThreads, int maxConcurrent,
                         int connectionsPerOriginPerLoop, int pendingAcquiresPerPool,
                         int chunkBytes, int responseBufferBytes, Duration connectTimeout,

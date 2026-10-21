@@ -10,31 +10,35 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Неизменяемый снимок после Processor: выбор пула, Host и request-target всегда
- * используют один URI. Сохранённая расширением ссылка на ProxyRequest уже не влияет на I/O.
+ * Неизменяемый снимок после обработки расширениями: пул соединений, Host и путь запроса
+ * формируются по одному URI. Сохранённая расширением ссылка на ProxyRequest больше
+ * не позволяет менять подготовленный сетевой запрос.
  */
 record PreparedRequest(String method, URI uri, Map<String, List<String>> headers,
                        long contentLength, boolean declaredLength) {
+    /** Проверяет итоговый URI и заголовки, фиксирует длину тела и исключает авторизацию, привязанную к соединению. */
     static PreparedRequest capture(HttpServletRequest incoming, ProxyRequest mutable) {
         URI uri = UpstreamUri.validate(mutable.uri());
         var headers = HeaderRules.requestSnapshot(mutable.headers());
-        // Общий пул не привязан к downstream-клиенту. NTLM/Negotiate могут закрепить
-        // identity за TCP-соединением и передать его другому клиенту при reuse.
-        // Проверяем итоговые заголовки: Processor может как добавить, так и заменить auth.
+        // Пул используется разными клиентами. NTLM/Negotiate могут привязать учётную запись
+        // к TCP-соединению и передать её другому клиенту при повторном использовании канала.
+        // Проверяем итоговые заголовки: расширение могло добавить или заменить авторизацию.
         for (String authorization : headers.getOrDefault("authorization", List.of())) {
             if (connectionBoundAuthentication(authorization))
                 throw new ProxyRejection(501, "Connection-bound authentication is unsupported");
         }
         long declared = incoming.getContentLengthLong();
         long length = declared;
-        // В HTTP/1 отсутствие CL и TE означает отсутствие тела. В HTTP/2 длина может
-        // оставаться неизвестной до END_STREAM: такое тело передаём upstream chunked.
+        // В HTTP/1 отсутствие Content-Length и Transfer-Encoding означает отсутствие тела.
+        // В HTTP/2 длина может быть неизвестна до END_STREAM; целевому серверу
+        // такое тело передаётся с кодированием chunked.
         if (length < 0 && incoming.getProtocol().startsWith("HTTP/1.")
                 && incoming.getHeader("Transfer-Encoding") == null) length = 0;
         return new PreparedRequest(incoming.getMethod(), uri,
                 headers, length, declared >= 0);
     }
 
+    /** Распознаёт NTLM/Negotiate по имени схемы, не анализируя и не сохраняя сам токен авторизации. */
     private static boolean connectionBoundAuthentication(String value) {
         int start = 0;
         while (start < value.length() && (value.charAt(start) == ' ' || value.charAt(start) == '\t')) start++;

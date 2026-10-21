@@ -23,12 +23,13 @@ import java.util.function.ToDoubleFunction;
 import java.util.function.ToLongFunction;
 
 /**
- * A metrics-only composite child that remembers the actual meters returned after the user's
- * filters have run. Policy objects and events remain the actual Resilience4j objects.
+ * Дочерний реестр метрик, который отслеживает фактические Meter после пользовательских фильтров.
+ * Локальная регистрация сохраняет исходный идентификатор, а измерения передаются реальному Meter.
+ * Политики Resilience4j и их события при этом не подменяются.
  */
 final class OwnedMeterRegistry extends MeterRegistry {
-    // Registrations, not contexts, own meters. Different composites can resolve to the same
-    // actual meter after filters; reference counting prevents one from deleting another's meter.
+    // После фильтров разные регистрации могут указывать на один фактический Meter.
+    // Считаем ссылки на этот объект, чтобы закрытие одной привязки не удаляло метрику другой.
     private static final Map<MeterRegistry, Map<Meter, Ownership>> OWNERS = new IdentityHashMap<>();
     private MeterRegistry actual;
     private final Map<Meter, Meter> registered = new IdentityHashMap<>();
@@ -40,6 +41,10 @@ final class OwnedMeterRegistry extends MeterRegistry {
         config().onMeterRemoved(this::release);
     }
 
+    /**
+     * Создаёт локальный адаптер и фиксирует ссылку на фактический Meter после фильтров.
+     * Отмечает, существовал ли объект заранее: чужую метрику нельзя удалить при закрытии привязки.
+     */
     private <M extends Meter> M register(Class<M> api, Meter.Id inputId, Supplier<M> factory, Supplier<M> noop) {
         synchronized (OWNERS) {
             if (disposed) return noop.get();
@@ -59,6 +64,10 @@ final class OwnedMeterRegistry extends MeterRegistry {
         }
     }
 
+    /**
+     * Отсоединяет один исходный ID и уменьшает число владельцев фактической метрики.
+     * Удаляет Meter только при последней ссылке и только если его создала управляемая привязка.
+     */
     private void release(Meter alias) {
         synchronized (OWNERS) {
             Meter meter = registered.remove(alias);
@@ -78,13 +87,13 @@ final class OwnedMeterRegistry extends MeterRegistry {
 
     @Override
     public void close() {
-        // Do not call actual.close() or Meter.close(): pre-existing meters belong to the app.
-        // Removing local registrations invokes release and drops only this binding's references.
+        // Внешний реестр и заранее существовавшие метрики принадлежат приложению: их не закрываем.
+        // Освобождаем локальные ссылки; удаляем только созданные управляемыми привязками метрики без других владельцев.
         synchronized (OWNERS) {
             if (disposed) return;
             disposed = true;
-            // A factory may have returned an alias before MeterRegistry publishes it in its
-            // meter map. Release registrations directly, including that publication window.
+            // Фабрика могла вернуть адаптер раньше его публикации в карте MeterRegistry.
+            // Поэтому освобождаем собственный список регистраций, включая ещё не опубликованные.
             for (Meter alias : java.util.List.copyOf(registered.keySet())) release(alias);
             for (Meter alias : getMeters()) remove(alias);
             actual = null;
@@ -101,6 +110,7 @@ final class OwnedMeterRegistry extends MeterRegistry {
                 .description(id.getDescription()).baseUnit(id.getBaseUnit()).register(actual), () -> new NoopCounter(id));
     }
 
+    /** Передаёт настройки гистограммы и единицы времени реальному таймеру, сохраняя локальный ID. */
     @Override protected Timer newTimer(Meter.Id id, DistributionStatisticConfig config, PauseDetector detector) {
         return register(Timer.class, id, () -> {
             var builder = Timer.builder(id.getName()).tags(id.getTags()).description(id.getDescription())

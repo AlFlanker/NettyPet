@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-/** Exercises the Reactor subscription at the Servlet ownership boundary. */
+/** Проверяет передачу владения Servlet-запросом при подписке на Reactor-команду. */
 class ProxyRequestHandlerTest {
     @Test
     void constructingPublisherDoesNotStartTransportAndSubscriptionHandsOffSynchronously() throws Exception {

@@ -1,7 +1,7 @@
 {
   "date": "2026-10-21",
   "build": "SUCCESSFUL",
-  "task": "clean build --no-daemon --max-workers=4",
+  "task": "clean build javadoc --no-daemon --max-workers=4; final build javadoc after comment refinement",
   "gradle": "8.14.3",
   "java": "21",
   "springBoot": "4.1.1",
@@ -49,7 +49,7 @@
   "realTlsIntegrationTests": 4,
   "upstreamHeaderDeadlineNetworkTests": 3,
   "optimizationReport": "OPTIMIZATIONS.md",
-  "bootJarSha256": "40373c07f6cc1a1c01700c7f7f21e1dd0b7e61bd27672b034b1d3b9f2a6affef",
+  "bootJarSha256": "033b11c14fa209c06b302a3e8d7146b351d470d729bdd538617bb14303a74076",
   "allocationExperiment": {
     "performed": true,
     "report": "perf/results.json",
@@ -106,6 +106,17 @@
   "appShutdownDuringTrafficTestPassed": true,
   "readOnlyJmxIntegrationTests": 3,
   "additionalValidatedTests": 93,
-  "sourceSnapshotSha256": "fdd10931526772be1bd62f33b80a10efafea241ada53707f6a933ed4fccf34af",
-  "validationBaselineTests": 150
+  "sourceSnapshotSha256": "6569238d784ce35f73064e45a57c548b3f03681451caf2b8ab74813072fbb459",
+  "validationBaselineTests": 150,
+  "documentationValidation": {
+    "language": "ru",
+    "changedSourceFiles": 99,
+    "javaAndGradleExecutableTokensUnchanged": true,
+    "pythonAstUnchangedExceptDocstrings": true,
+    "yamlSettingsUnchanged": true,
+    "javadoc": "SUCCESSFUL; missing documentation/tag warnings remain",
+    "independentCommentReview": "PASS; all seven wording findings resolved",
+    "perfJavaProbeCompilation": "SUCCESSFUL",
+    "perfPythonHelpChecks": "SUCCESSFUL"
+  }
 }

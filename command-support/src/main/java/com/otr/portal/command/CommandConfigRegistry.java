@@ -20,9 +20,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * Owns named policies; configuration cannot be replaced until all invocations finish cleanup.
- * Resilience4j registry listeners must be nonblocking and must not throw; external callers
- * must not replace or remove this registry's named policies.
+ * Хранит политики по имени команды и запрещает их замену до очистки всех использующих их операций.
+ * Обработчики событий Resilience4j должны быть неблокирующими и не бросать исключений.
+ * Созданные здесь политики нельзя удалять или заменять напрямую во внешних реестрах Resilience4j.
  */
 @Component
 @RequiredArgsConstructor
@@ -34,8 +34,8 @@ public class CommandConfigRegistry {
     private final Map<String, Entry> commandConfigs = new HashMap<>();
 
     /**
-     * Acquires one lifecycle reference, including admission, retries, cancellation and cleanup.
-     * The caller closes the lease only after the operation has released its resources.
+     * Фиксирует поколение политик на время допуска, повторов, отмены и очистки одной операции.
+     * Возвращённую ссылку нужно закрыть только после фактического освобождения её ресурсов.
      */
     public synchronized Lease acquire(CommandContext context) {
         Objects.requireNonNull(context, "context");
@@ -44,25 +44,37 @@ public class CommandConfigRegistry {
         return new Lease(entry);
     }
 
-    /** Compatibility lookup. Executions must use {@link #acquire(CommandContext)} instead. */
+    /**
+     * Возвращает политики без фиксации их времени жизни; сохранён для внутренней совместимости.
+     * Исполнители обязаны использовать {@link #acquire(CommandContext)}, чтобы запретить преждевременную замену.
+     */
     synchronized CommandResilienceHolder getOrCreate(CommandContext context) {
         return resolve(Objects.requireNonNull(context, "context")).holder;
     }
 
-    /** Atomically clears only policies owned by this registry, provided none is in use. */
+    /**
+     * Удаляет все созданные здесь политики, только если ни одна не используется.
+     * При занятой записи метод бросает исключение до удаления любой из записей.
+     */
     public synchronized void clearAllCaches() {
         clearMatching(name -> true);
     }
 
     /**
-     * Atomically clears owned policies with the given prefix. Fails without changing anything
-     * when a matching operation is still active, even if its result already timed out.
+     * Удаляет собственные политики, имена которых начинаются с указанного префикса.
+     * Если хотя бы одна из них используется, ничего не удаляет и бросает исключение.
+     * Завершение результата по таймауту не делает политику свободной до окончания очистки.
      */
     public synchronized void clearCache(String startsWith) {
         Objects.requireNonNull(startsWith, "startsWith");
         clearMatching(name -> name.startsWith(startsWith));
     }
 
+    /**
+     * Находит неизменяемые политики либо создаёт их для нового имени.
+     * Другие настройки существующего имени отклоняются, чтобы не разделить работающие вызовы
+     * между старым и новым ограничителем параллелизма.
+     */
     private Entry resolve(CommandContext context) {
         Entry existing = commandConfigs.get(context.getCommandName());
         if (existing != null) {
@@ -73,7 +85,7 @@ public class CommandConfigRegistry {
             return existing;
         }
         String name = context.getCommandName();
-        // Never silently adopt a limiter created outside this registry: its policy could differ.
+        // Чужой лимитер с тем же именем может иметь другие настройки: не принимаем его неявно.
         if (bulkheadRegistry.find(name).isPresent() || timeLimiterRegistry.find(name).isPresent()
                 || circuitBreakerRegistry.find(name).isPresent() || retryRegistry.find(name).isPresent()) {
             throw new IllegalStateException("Resilience registry already contains unmanaged command '" + name + "'");
@@ -95,6 +107,10 @@ public class CommandConfigRegistry {
         return created;
     }
 
+    /**
+     * Сначала проверяет все выбранные записи, затем удаляет их из четырёх реестров.
+     * Два прохода под общим монитором исключают частичную очистку при занятой записи.
+     */
     private void clearMatching(Predicate<String> matches) {
         commandConfigs.forEach((name, entry) -> {
             if (matches.test(name) && entry.active != 0) {
@@ -111,7 +127,10 @@ public class CommandConfigRegistry {
         });
     }
 
-    /** Idempotent reference to a stable policy generation. */
+    /**
+     * Фиксирует одно поколение политик до закрытия ссылки.
+     * Повторный close() безопасен и не уменьшает число активных ссылок повторно.
+     */
     public final class Lease implements AutoCloseable {
         private final Entry entry;
         private boolean closed;
@@ -120,6 +139,7 @@ public class CommandConfigRegistry {
 
         public CommandResilienceHolder holder() { return entry.holder; }
 
+        /** Снимает только эту фиксацию поколения; повторный вызов ничего не меняет. */
         @Override
         public void close() {
             synchronized (CommandConfigRegistry.this) {

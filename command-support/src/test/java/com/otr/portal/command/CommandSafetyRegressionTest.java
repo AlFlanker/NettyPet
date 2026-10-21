@@ -32,9 +32,10 @@ import org.reactivestreams.Subscription;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Public API regression tests for admission, delayed cleanup and the total retry deadline. */
+/** Проверяет допуск команд, ожидание очистки ресурсов и единый срок всех попыток через открытый API. */
 @Timeout(10)
 class CommandSafetyRegressionTest {
+    /** Создание Mono не запускает действие; каждая подписка получает отдельный вызов фабрики. */
     @Test
     void constructingPublisherDoesNotRunWorkAndEverySubscriptionGetsFreshWork() {
         try (Fixture f = new Fixture(properties(Duration.ofSeconds(3)))) {
@@ -49,6 +50,7 @@ class CommandSafetyRegressionTest {
         }
     }
 
+    /** Синхронная ошибка фабрики передаётся резервному обработчику ровно один раз. */
     @Test
     void synchronousFactoryExceptionReachesFallbackOnce() {
         try (Fixture f = new Fixture(properties(Duration.ofSeconds(3)))) {
@@ -61,6 +63,7 @@ class CommandSafetyRegressionTest {
         }
     }
 
+    /** При исчерпанном лимите параллелизма фабрика источника вообще не вызывается. */
     @Test
     void fullBulkheadDoesNotCallTheSourceFactory() throws Exception {
         try (Fixture f = new Fixture(properties(Duration.ofSeconds(3)))) {
@@ -78,6 +81,7 @@ class CommandSafetyRegressionTest {
         }
     }
 
+    /** Открытый CircuitBreaker отклоняет команду до вызова фабрики источника. */
     @Test
     void openCircuitDoesNotCallTheSourceFactory() {
         try (Fixture f = new Fixture(properties(Duration.ofSeconds(3)))) {
@@ -92,6 +96,7 @@ class CommandSafetyRegressionTest {
         }
     }
 
+    /** Резервный результат по таймауту не возвращает разрешение и не позволяет удалить политику до очистки. */
     @Test
     void fallbackOnTimeoutDoesNotReleaseThePermitOrAllowRegistryResetBeforeCleanup() throws Exception {
         try (Fixture f = new Fixture(properties(Duration.ofMillis(80)))) {
@@ -111,12 +116,13 @@ class CommandSafetyRegressionTest {
             assertEquals("fallback", publisher.block(Duration.ofSeconds(3)));
             assertEquals(1, starts.get(), "A timed-out task still occupies the bulkhead during cleanup");
             task.completion.complete("cleanup finished");
-            // CompletableFuture completion invokes the engine's cleanup observer synchronously.
+            // Завершение CompletableFuture синхронно вызывает обработчик, подтверждающий очистку ресурсов.
             assertEquals(1, f.holder.getBulkhead().getMetrics().getAvailableConcurrentCalls());
             assertDoesNotThrow(() -> f.registry.clearCache("safety"));
         }
     }
 
+    /** Общий таймаут учитывается CircuitBreaker как ошибка, а не как локальная отмена. */
     @Test
     void genericCircuitBreakerRecordsTheDeadlineRatherThanTreatingItAsCancellation() throws Exception {
         try (Fixture f = new Fixture(properties(Duration.ofMillis(60)))) {
@@ -131,6 +137,7 @@ class CommandSafetyRegressionTest {
         }
     }
 
+    /** Первая причина отмены сохраняется, задача уведомляется один раз, а разрешение ждёт очистки. */
     @Test
     void callerCancellationThenShutdownCancelsTaskOnlyOnceAndStillWaitsForCleanup() throws Exception {
         try (Fixture f = new Fixture(properties(Duration.ofSeconds(3)))) {
@@ -160,6 +167,7 @@ class CommandSafetyRegressionTest {
         }
     }
 
+    /** Отмена подписки только запрашивает остановку; слот остаётся занят до подтверждения очистки. */
     @Test
     void cancellingTheMonoSubscriptionRequestsCleanupWithoutReleasingTheSlot() throws Exception {
         try (Fixture f = new Fixture(properties(Duration.ofSeconds(3)))) {
@@ -177,6 +185,7 @@ class CommandSafetyRegressionTest {
         }
     }
 
+    /** Немедленная отмена в onSubscribe не должна допустить даже первый запуск операции. */
     @Test
     void cancellationInOnSubscribeDoesNotStartResourceWork() {
         try (Fixture f = new Fixture(properties(Duration.ofSeconds(3)))) {
@@ -193,6 +202,7 @@ class CommandSafetyRegressionTest {
         }
     }
 
+    /** Повтор начинается после завершения предыдущей задачи и использует то же внешнее разрешение. */
     @Test
     void retryRequiresPreviousCompletionAndUsesTheSameOccupiedPermit() throws Exception {
         CommandProperties policy = properties(Duration.ofSeconds(3)).toBuilder()
@@ -225,6 +235,7 @@ class CommandSafetyRegressionTest {
         }
     }
 
+    /** Без явного разрешения повторяемости даже RetryableException не запускает вторую попытку. */
     @Test
     void retryableFailureIsNotRetriedWithoutExplicitReplayabilityOptIn() throws Exception {
         try (Fixture f = new Fixture(properties(Duration.ofSeconds(3)))) {
@@ -244,6 +255,7 @@ class CommandSafetyRegressionTest {
         }
     }
 
+    /** Ожидание повтора входит в общий бюджет и не разрешает новую попытку после таймаута. */
     @Test
     void totalDeadlineExpiresDuringRetryBackoffAndNeverStartsAnotherAttempt() throws Exception {
         CommandProperties policy = properties(Duration.ofMillis(80)).toBuilder()

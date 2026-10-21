@@ -19,20 +19,20 @@ import java.util.WeakHashMap;
 import java.util.function.Consumer;
 
 /**
- * Context-owned subscription to the actual Resilience4j registries' official metrics.
+ * Привязывает метрики фактических реестров Resilience4j на время жизни Spring-контекста.
  *
- * <p>Resilience4j 2.4 event publishers cannot unsubscribe. Install each official binder only
- * once per actual registry, targeting a composite with context-owned children. Closing a
- * context detaches its child and removes its meters; it neither closes a supplied meter
- * registry nor adds another set of primitive/registry listeners on a subsequent context.
- * All state shared across contexts is guarded by {@code SHARED}. Independent registries
- * sharing a meter registry must use distinct profile names/tags; identical Micrometer IDs
- * have the usual first-gauge-source semantics, even though their ownership is reference counted.
+ * <p>Resilience4j 2.4 не позволяет отписывать обработчики событий. Поэтому стандартная привязка
+ * устанавливается один раз на реестр и пишет в составной реестр, к которому контексты подключают
+ * собственные дочерние реестры. Закрытие контекста удаляет его привязку и принадлежащие ей метрики,
+ * не закрывая пользовательский MeterRegistry. Повторное подключение не дублирует обработчики событий.
+ * Общее состояние защищено монитором {@code SHARED}. Независимые реестры должны различать
+ * имена или теги профилей: при одинаковом ID Micrometer использует первый источник Gauge,
+ * даже если ссылки на общую метрику учитываются корректно.
  */
 final class RegistryMetricsBinding implements AutoCloseable {
-    // Values must never retain their weak registry keys. Official gauges/function counters
-    // weakly reference their policy objects; counters/timers have no registry reference.
-    // The official binder, which DOES retain its registry, is not stored in this map.
+    // Значение не должно удерживать реестр, служащий слабым ключом этой карты.
+    // Gauge и функциональные счётчики ссылаются на политики слабо, обычные счётчики и таймеры
+    // не удерживают реестр. Сам объект стандартной привязки, который удерживает реестр, здесь не храним.
     private static final Map<Registry<?, ?>, SharedBinding> SHARED = new WeakHashMap<>();
     private final List<Registration> registrations = new ArrayList<>();
 
@@ -51,6 +51,10 @@ final class RegistryMetricsBinding implements AutoCloseable {
         }
     }
 
+    /**
+     * Переиспользует общую привязку событий и фиксирует подключение данного контекста.
+     * При ошибке создания отключает добавленный дочерний реестр, не оставляя частичную привязку.
+     */
     private void add(Registry<?, ?> registry, MeterRegistry meters, Consumer<MeterRegistry> binder) {
         synchronized (SHARED) {
             SharedBinding shared = SHARED.get(registry);
@@ -71,6 +75,7 @@ final class RegistryMetricsBinding implements AutoCloseable {
         }
     }
 
+    /** Снимает только ссылки этого контекста; общие обработчики событий реестра остаются для следующих привязок. */
     @Override
     public void close() {
         synchronized (SHARED) {
@@ -85,6 +90,7 @@ final class RegistryMetricsBinding implements AutoCloseable {
         private final CompositeMeterRegistry composite = new CompositeMeterRegistry();
         private final Map<MeterRegistry, Child> children = new IdentityHashMap<>();
 
+        /** Подключает дочерний реестр один раз и учитывает совместное использование несколькими контекстами. */
         private void attach(MeterRegistry meters) {
             Child existing = children.get(meters);
             if (existing != null) {
@@ -96,6 +102,7 @@ final class RegistryMetricsBinding implements AutoCloseable {
             children.put(meters, child);
         }
 
+        /** При последней ссылке отключает дочерний реестр и освобождает принадлежащие привязке метрики. */
         private void detach(MeterRegistry meters) {
             Child child = children.get(meters);
             if (child == null || --child.references != 0) return;

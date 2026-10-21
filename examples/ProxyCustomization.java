@@ -12,6 +12,7 @@ import org.springframework.core.annotation.Order;
  */
 @Configuration(proxyBeanMethods = false)
 public class ProxyCustomization {
+    /** Добавляет заголовки к исходящему запросу и передаёт обработку следующему процессору. */
     @Bean
     @Order(10)
     RequestProcessor additionalHeaders() {
@@ -23,6 +24,10 @@ public class ProxyCustomization {
         };
     }
 
+    /**
+     * Меняет только префикс /public на /internal в исходном закодированном пути.
+     * Остаток пути и строка параметров сохраняются без повторного кодирования.
+     */
     @Bean
     @Order(20)
     RequestProcessor rewritePathPrefix() {
@@ -32,7 +37,7 @@ public class ProxyCustomization {
             String from = "/public";
             if (rawPath.equals(from) || rawPath.startsWith(from + "/")) {
                 String rewritten = "/internal" + rawPath.substring(from.length());
-                // Путь и query уже закодированы: собираем URI из raw-компонентов.
+                // Путь и строка параметров уже закодированы: собираем URI из исходных компонентов.
                 // Многокомпонентный конструктор URI повторно закодировал бы '%'.
                 String rawQuery = current.getRawQuery();
                 outgoing.uri(URI.create(current.getScheme() + "://" + current.getRawAuthority()

@@ -29,7 +29,7 @@ import org.springframework.jmx.support.JmxUtils;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Реальный Boot exporter: регистрация, значения, readonly-контракт и удаление при close. */
+/** Проверяет регистрацию, чтение и удаление MBean настоящим экспортёром Spring Boot. */
 @Timeout(30)
 class ProxyDiagnosticsIntegrationTest {
     private final MBeanServer server = ManagementFactory.getPlatformMBeanServer();
@@ -41,7 +41,7 @@ class ProxyDiagnosticsIntegrationTest {
         HttpServer backend = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         backend.createContext("/", exchange -> {
             try (exchange) {
-                exchange.getRequestBody().readAllBytes(); // Только маленькая фиксированная test fixture.
+                exchange.getRequestBody().readAllBytes(); // Только небольшое тело фиксированного тестового запроса.
                 exchange.sendResponseHeaders(200, responseBody.length);
                 exchange.getResponseBody().write(responseBody);
             }
@@ -89,7 +89,7 @@ class ProxyDiagnosticsIntegrationTest {
             assertFalse(commands.circuitBreaker().tryAcquirePermission());
             assertEquals("OPEN", server.getAttribute(registered, "CircuitBreakerState"));
             assertEquals(1L, server.getAttribute(registered, "CircuitBreakerRejectedTotal"));
-            // OPEN — состояние backend-группы, не повод выдавать локальное приложение за мёртвое.
+            // OPEN описывает группу целевых серверов и не означает остановку локального приложения.
             assertEquals(true, server.getAttribute(registered, "AcceptingTraffic"));
             commands.timeLimiter().onError(new TimeoutException("diagnostic event"));
             commands.timeLimiter().onError(new IOException("diagnostic event"));

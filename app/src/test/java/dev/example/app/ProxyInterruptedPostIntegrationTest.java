@@ -26,7 +26,7 @@ import org.springframework.context.ConfigurableApplicationContext;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** A partially consumed one-shot POST must never be replayed when the backend disappears. */
+/** Проверяет отсутствие повтора POST после чтения части тела и обрыва целевого сервера. */
 @Timeout(20)
 class ProxyInterruptedPostIntegrationTest {
     private static final byte[] PREFIX = "partial-post-body".getBytes(StandardCharsets.US_ASCII);
@@ -75,7 +75,7 @@ class ProxyInterruptedPostIntegrationTest {
                         }
                         assertTrue(promisedMoreBody, "The client must expect ten bytes before the backend closes");
                         assertArrayEquals(FIRST, response.readNBytes(FIRST.length));
-                        // Only close upstream once the client has received a committed body prefix.
+                        // Закрываем соединение с внешним сервером только после получения клиентом начала тела ответа.
                         backend.closeConnection.countDown();
                         assertEquals(0, response.readAllBytes().length,
                                 "An aborted response must end before the remaining five promised bytes arrive");
@@ -162,7 +162,7 @@ class ProxyInterruptedPostIntegrationTest {
                     socket.getOutputStream().flush();
                 }
                 assertTrue(closeConnection.await(5, TimeUnit.SECONDS));
-                // No complete response/body and no second attempt: deliberately close the physical socket.
+                // Закрываем физический сокет, не завершая тело ответа: прокси не должен повторить запрос.
             } catch (Throwable unexpected) {
                 failure.compareAndSet(null, unexpected);
                 partialBodyReceived.countDown();

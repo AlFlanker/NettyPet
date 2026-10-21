@@ -32,16 +32,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import javax.net.ssl.SSLParameters;
 
 /**
- * Ограниченные HTTP/1.1-пулы: один канал и его exchange всегда принадлежат одному event loop.
- * Здесь находятся сетевые ресурсы и их жизненный цикл; маршрутизацию определяет вызывающий код.
+ * Ограниченные пулы HTTP/1.1: канал и обслуживаемый им обмен закреплены за одним циклом событий.
+ * Класс управляет сетевыми ресурсами и их остановкой; маршрут выбирает вызывающий код.
  */
 final class NettyTransport implements AutoCloseable {
     static final AttributeKey<ProxyExchange> EXCHANGE = AttributeKey.valueOf(NettyTransport.class, "exchange");
     private static final AttributeKey<io.netty.util.concurrent.ScheduledFuture<?>> IDLE =
             AttributeKey.valueOf(NettyTransport.class, "idle");
     private static final AttributeKey<Boolean> RETIRING = AttributeKey.valueOf(NettyTransport.class, "retiring");
-    // TLS close_notify может ещё flush-иться при isActive()==true. Такой канал уже
-    // нельзя выдавать из idle pool, даже если физическое закрытие ещё не завершилось.
+    // Уведомление TLS close_notify может ещё отправляться при isActive()==true.
+    // Закрывающийся канал уже нельзя выдавать из пула, хотя TCP-соединение ещё активно.
     private static final ChannelHealthChecker REUSABLE = channel -> channel.eventLoop().newSucceededFuture(
             channel.isActive() && channel.attr(RETIRING).get() != Boolean.TRUE);
     private final ProxyOptions config;
@@ -53,8 +53,8 @@ final class NettyTransport implements AutoCloseable {
     private final Set<Origin> allowed;
     private final Map<PoolKey, FixedChannelPool> pools = new ConcurrentHashMap<>();
     private final Set<ProxyExchange> active = ConcurrentHashMap.newKeySet();
-    // FixedChannelPool.close() закрывает свободные каналы, но не все выданные/подключающиеся.
-    // stayClosed также закроет канал, чья регистрация завершится уже после начала shutdown.
+    // FixedChannelPool.close() закрывает свободные каналы, но не все занятые или подключающиеся.
+    // Режим stayClosed также закроет канал, зарегистрированный после начала остановки.
     private final ChannelGroup channels = new DefaultChannelGroup(
             "proxy-upstreams", GlobalEventExecutor.INSTANCE, true);
     private final Semaphore admission;
@@ -65,6 +65,7 @@ final class NettyTransport implements AutoCloseable {
         this(config, downstreamAborter, ProxyIoAdapter.PORTABLE);
     }
 
+    /** Создаёт общие DNS/TLS/I/O-ресурсы и лимит одновременных обменов для одного фасада. */
     NettyTransport(ProxyOptions config, DownstreamAborter downstreamAborter, ProxyIoAdapter ioAdapter) throws Exception {
         this.config = Objects.requireNonNull(config, "config");
         this.downstreamAborter = Objects.requireNonNull(downstreamAborter);
@@ -73,8 +74,8 @@ final class NettyTransport implements AutoCloseable {
         origins.add(Origin.from(config.upstream()));
         config.allowedOrigins().forEach(uri -> origins.add(Origin.from(uri)));
         allowed = Set.copyOf(origins);
-        // Фиксируем JDK provider: наличие tcnative в приложении не должно незаметно менять
-        // владение SSL-контекстом на reference-counted native resource.
+        // Явно выбираем TLS-провайдер JDK: наличие tcnative не должно незаметно заменять
+        // SSL-контекст нативным ресурсом, для которого нужен отдельный подсчёт ссылок.
         this.tls = SslContextBuilder.forClient().sslProvider(SslProvider.JDK)
                 .protocols("TLSv1.3", "TLSv1.2").build();
         this.resolver = new DnsAddressResolverGroup(new DnsNameResolverBuilder()
@@ -102,11 +103,13 @@ final class NettyTransport implements AutoCloseable {
         return ioAdapter.createWriter(request, response);
     }
 
+    /** Проверяет флаг остановки и пытается без ожидания занять слот обмена. */
     public boolean tryAcquire() { return !closed.get() && admission.tryAcquire(); }
     public void releaseAdmission() { admission.release(); }
     public int activeRequests() { return config.maxConcurrent() - admission.availablePermits(); }
     public EventLoop nextLoop() { return loops.next(); }
     public boolean permits(Origin origin) { return allowed.contains(origin); }
+    /** Регистрирует обмен для последующей остановки атомарно относительно close(). */
     synchronized boolean register(ProxyExchange exchange) {
         if (closed.get()) return false;
         active.add(exchange);
@@ -114,6 +117,7 @@ final class NettyTransport implements AutoCloseable {
     }
     void unregister(ProxyExchange exchange) { active.remove(exchange); }
 
+    /** Возвращает ограниченный пул для разрешённого сервера и конкретного цикла событий. */
     FixedChannelPool pool(Origin origin, EventLoop loop) {
         if (closed.get()) throw new IllegalStateException("Transport closed");
         if (!permits(origin)) throw new IllegalArgumentException("Upstream origin not allowed");
@@ -126,9 +130,10 @@ final class NettyTransport implements AutoCloseable {
         }
     }
 
+    /** Настраивает соединения, TLS и строгий HTTP-декодер; ограничивает очередь ожидающих выдачи канала. */
     private FixedChannelPool newPool(PoolKey key) {
-        // AUTO_READ=false и один socket-read за цикл ограничивают опережающее чтение:
-        // следующий read() выдаёт exchange только после освобождения downstream-буфера.
+        // AUTO_READ=false и одно чтение сокета за цикл ограничивают опережающее чтение.
+        // Обмен запрашивает следующий read() после обработки текущих данных и готовности записи клиенту.
         FixedRecvByteBufAllocator recv = new FixedRecvByteBufAllocator(config.chunkBytes());
         recv.maxMessagesPerRead(1);
         Bootstrap bootstrap = new Bootstrap().group(key.loop()).channel(NioSocketChannel.class)
@@ -152,9 +157,10 @@ final class NettyTransport implements AutoCloseable {
                     ssl.setHandshakeTimeoutMillis(config.connectTimeout().toMillis());
                     channel.pipeline().addLast("tls", ssl);
                 }
-                // Явная строгая конфигурация не зависит от process-wide Netty properties.
-                // В частности, неоднозначные TE+CL и повторные CL отклоняются до передачи
-                // заголовков клиенту. Aggregator/decompressor отсутствуют: тело остаётся потоком.
+                // Строгая конфигурация не зависит от глобальных свойств Netty.
+                // Неоднозначное сочетание Transfer-Encoding/Content-Length и повторные
+                // Content-Length отклоняются до передачи заголовков клиенту. Объединение
+                // всего тела и распаковка не включены: данные передаются потоком.
                 HttpDecoderConfig decoder = new HttpDecoderConfig()
                         .setMaxInitialLineLength(8192).setMaxHeaderSize(16384)
                         .setMaxChunkSize(config.chunkBytes()).setValidateHeaders(true)
@@ -177,24 +183,27 @@ final class NettyTransport implements AutoCloseable {
                 config.pendingAcquiresPerPool());
     }
 
+    /** Удаляет таймер простоя при выдаче, повторном возврате или окончательном закрытии канала. */
     private static void cancelIdleTimer(Channel channel) {
         var timer = channel.attr(IDLE).getAndSet(null);
         if (timer != null) timer.cancel(false);
     }
 
+    /** Немедленно запрещает повторную выдачу канала и запускает его асинхронное закрытие. */
     private static void retire(Channel channel) {
-        // Маркер ставится ДО close и никогда не сбрасывается: отмена idle timer при
-        // acquire предотвращает только ещё не начатое закрытие, но не отменяет TLS shutdown.
+        // Маркер ставится до close и не сбрасывается. Отмена таймера простоя при выдаче
+        // канала предотвращает новое закрытие, но не отменяет уже начавшееся завершение TLS.
         channel.attr(RETIRING).set(Boolean.TRUE);
         channel.close();
     }
 
+    /** Передаёт события текущему обмену и освобождает исходную ссылку на каждое принятое сообщение Netty. */
     private static final class Inbound extends ChannelInboundHandlerAdapter {
         @Override public void channelRead(ChannelHandlerContext ctx, Object message) {
             ProxyExchange exchange = ctx.channel().attr(EXCHANGE).get();
             if (exchange == null) {
                 ReferenceCountUtil.release(message);
-                retire(ctx.channel()); // Незапрошенные данные не должны попасть в следующий exchange этого пула.
+                retire(ctx.channel()); // Незапрошенные данные не должны попасть в следующий обмен этого пула.
                 return;
             }
             try { exchange.received(message); }
@@ -221,8 +230,9 @@ final class NettyTransport implements AutoCloseable {
     }
 
     /**
-     * Синхронная остановка из lifecycle-потока приложения. На собственном I/O-потоке
-     * ждать остановки группы нельзя: этот же поток нужен для освобождения каналов.
+     * Прекращает приём обменов и синхронно освобождает каналы, DNS и циклы событий.
+     * Вызывается из потока жизненного цикла приложения: собственный поток I/O
+     * или глобальный исполнитель Netty не может ждать ресурсы, которые сам должен освободить.
      */
     @Override public void close() {
         for (var executor : loops) {
@@ -239,9 +249,9 @@ final class NettyTransport implements AutoCloseable {
             closingPools = List.copyOf(pools.values());
         }
         try {
-            // Сначала ставим cleanup exchange в ещё работающие owner loops. Закрытие пулов
-            // завершает pending acquire; используем async+awaitUninterruptibly, чтобы interrupt
-            // lifecycle-потока не оборвал освобождение остальных сетевых ресурсов.
+            // Сначала ставим очистку обменов в ещё работающие закреплённые циклы событий.
+            // Закрытие пулов завершает ожидающие запросы каналов. Асинхронное закрытие
+            // с awaitUninterruptibly не даёт прерыванию вызывающего потока оборвать очистку.
             closing.forEach(ProxyExchange::shutdown);
             closingPools.forEach(pool -> pool.closeAsync().awaitUninterruptibly());
         } finally {

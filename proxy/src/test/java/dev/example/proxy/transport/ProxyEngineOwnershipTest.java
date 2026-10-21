@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+/** Проверяет границу владения Servlet-запросом и освобождение допуска при ошибке создания обмена. */
 class ProxyEngineOwnershipTest {
     @Test
     void fatalProcessorErrorReturnsAdmissionAndPropagatesWithoutHttpErrorMapping() throws Exception {

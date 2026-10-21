@@ -3,11 +3,11 @@ package dev.example.proxy.core;
 import java.net.URI;
 import java.util.Objects;
 
-/** Сборка request-target без изменения значения raw path/query и без смены authority. */
+/** Собирает адрес исходящего запроса, сохраняя исходное кодирование пути, параметров и узел назначения. */
 public final class UpstreamUri {
     private UpstreamUri() {}
 
-    /** Добавляет исходный raw path/query к необязательному базовому префиксу upstream. */
+    /** Добавляет исходные путь и строку параметров к базовому пути сервера без декодирования. */
     public static URI resolve(URI base, String rawPath, String rawQuery) {
         validate(base);
         if (base.getRawQuery() != null) {
@@ -20,9 +20,9 @@ public final class UpstreamUri {
         String prefix = base.getRawPath();
         if (prefix == null || prefix.equals("/")) prefix = "";
         else if (prefix.endsWith("/")) prefix = prefix.substring(0, prefix.length() - 1);
-        // URI.resolve("//host/path") сменил бы authority. Здесь ведущие // остаются
-        // частью пути. Не декодируем %2F, %25, '+' и не нормализуем '..': это изменило
-        // бы маршрутизацию backend и нарушило подписи запросов, зависящие от raw URI.
+        // URI.resolve("//host/path") сменил бы узел назначения. Здесь ведущие // остаются
+        // частью пути. Декодирование %2F, %25, '+' или нормализация '..' изменили бы
+        // маршрутизацию сервера и подписи запросов, зависящие от исходного URI.
         String target = base.getScheme() + "://" + base.getRawAuthority() + prefix + rawPath
                 + (rawQuery == null ? "" : "?" + rawQuery);
         URI result = URI.create(target);
@@ -30,6 +30,7 @@ public final class UpstreamUri {
         return result;
     }
 
+    /** Проверяет абсолютный HTTP(S) URI без логина, пароля и фрагмента с допустимым портом. */
     public static URI validate(URI uri) {
         Objects.requireNonNull(uri, "uri");
         String scheme = uri.getScheme();
@@ -41,6 +42,7 @@ public final class UpstreamUri {
         return uri;
     }
 
+    /** Возвращает путь и параметры для стартовой строки HTTP/1.1, сохраняя готовые %XX-последовательности. */
     public static String requestTarget(URI uri) {
         validate(uri);
         // Кодируем лишь ещё не закодированный Unicode. Готовые %XX сохраняются;

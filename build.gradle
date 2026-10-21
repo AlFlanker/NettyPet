@@ -6,10 +6,15 @@ plugins {
     id 'org.springframework.boot' version '4.1.1' apply false
 }
 
+/**
+ * Передаёт Mockito в тестовую JVM как агент запуска. Аннотация Classpath позволяет Gradle
+ * учитывать JAR агента при проверке актуальности тестов и работе с кэшем.
+ */
 abstract class MockitoAgentArguments implements CommandLineArgumentProvider {
     @Classpath
     abstract ConfigurableFileCollection getAgentClasspath()
 
+    /** Формирует аргумент запуска агента; конфигурация должна содержать ровно один JAR. */
     @Override
     Iterable<String> asArguments() {
         ["-javaagent:${agentClasspath.singleFile.absolutePath}".toString()]
@@ -55,7 +60,7 @@ subprojects {
         if (project.name in ['app', 'proxy']) {
             systemProperty 'io.netty.leakDetection.level', 'paranoid'
         }
-        // An explicit startup agent works without dynamic/self attachment on recent JDKs.
+        // Подключаем агент при запуске JVM: Mockito не требуется динамическое подключение к процессу.
         def agentArguments = objects.newInstance(MockitoAgentArguments)
         agentArguments.agentClasspath.from(configurations.mockitoAgent)
         jvmArgumentProviders.add(agentArguments)

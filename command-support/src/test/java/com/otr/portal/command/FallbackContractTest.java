@@ -29,11 +29,12 @@ import reactor.core.publisher.MonoSink;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.awaitility.Awaitility.await;
 
-/** The original policies protect the operation; fallback has an independent lifecycle. */
+/** Проверяет, что резервная обработка ошибки имеет отдельный жизненный цикл от защищённой операции. */
 @Timeout(10)
 class FallbackContractTest {
     private static final Duration ORIGINAL_TIMEOUT = Duration.ofMillis(60);
 
+    /** Резервная обработка может продолжаться после таймаута, пока исходная операция ещё держит ресурсы. */
     @Test
     void resourceFallbackOutlivesTheDeadlineWhileOriginalCleanupStillOwnsItsPermit() throws Exception {
         try (Fixture f = new Fixture(SourceKind.RESOURCE)) {
@@ -46,7 +47,7 @@ class FallbackContractTest {
             assertEquals(0, f.available());
             assertThrows(IllegalStateException.class, f.registry::clearAllCaches);
 
-            // A fallback timeout accidentally nested inside the original policy would cancel it here.
+            // Если бы исходный таймаут распространялся на резервную обработку, она была бы отменена к этому моменту.
             assertFalse(f.fallbackCancelled.await(ORIGINAL_TIMEOUT.toMillis() * 3, TimeUnit.MILLISECONDS));
             assertFalse(result.isDone());
             assertEquals(1, f.starts.get(), "The original operation is never restarted by fallback");
@@ -66,6 +67,7 @@ class FallbackContractTest {
         }
     }
 
+    /** Исходные лимиты не распространяются на резервный Mono и не определяют момент его завершения. */
     @Test
     void simpleFallbackHasNoOriginalDeadlineOrBulkheadAndCompletesIndependently() throws Exception {
         try (Fixture f = new Fixture(SourceKind.SIMPLE)) {
@@ -87,6 +89,7 @@ class FallbackContractTest {
         }
     }
 
+    /** Отмена подписчика останавливает резервный источник, не дублируя отмену исходной операции. */
     @ParameterizedTest
     @EnumSource(SourceKind.class)
     void downstreamCancellationCancelsFallbackWithoutCancellingOriginalTwice(SourceKind sourceKind) throws Exception {
@@ -113,6 +116,7 @@ class FallbackContractTest {
         }
     }
 
+    /** Ошибка резервной обработки не повторяет исходную команду и не меняет её учёт в CircuitBreaker. */
     @ParameterizedTest
     @EnumSource(SourceKind.class)
     void retryableFallbackFailureDoesNotRetryTheOriginalOrAddAnotherCircuitSample(SourceKind sourceKind) throws Exception {
@@ -216,7 +220,7 @@ class FallbackContractTest {
         void awaitOriginalRelease() {
             await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> {
                 assertEquals(1, available());
-                // Permit release precedes the independent registry-lease completion callback.
+                // Возврат разрешения опережает отдельный обработчик освобождения ссылки на поколение конфигурации.
                 assertDoesNotThrow(registry::clearAllCaches);
             });
         }
