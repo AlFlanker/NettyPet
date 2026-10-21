@@ -29,8 +29,8 @@
 
 Адаптер `JettyProxyIoAdapter` расположен в `app`, SPI `ProxyIoAdapter`/`DownstreamWriter`
 — в `proxy`. Модуль `proxy` не импортирует Jetty и не знает о Resilience4j.
-`resilience` продолжает работать с generic Command; итоговый cleanup транспортной
-операции соединяется с временем жизни Bulkhead permit только через композицию `app`.
+`command-support` предоставляет команды с ресурсным lifecycle; итоговый cleanup
+транспортной операции соединяется с временем жизни Bulkhead permit через композицию `app`.
 
 ## Владение и обратное давление
 

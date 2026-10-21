@@ -6,7 +6,6 @@
 | --- | --- |
 | `proxy` | Servlet API, Netty, SLF4J; потоковая передача, framing, буферы, upstream pools, транспортный lifecycle |
 | `command-support` | Reactor API, Resilience4j 2.4.0; TimeLimiter, Bulkhead, CircuitBreaker, opt-in Retry, отмена и подтверждённая очистка |
-| `resilience` | Прежний CompletionStage API; сохранён для совместимости, приложение его не использует |
 | `app` | Зависит от обоих модулей; связывает HTTP-запрос с командой, настраивает политики и переводит отказы в HTTP |
 
 `proxy` не импортирует Resilience4j или типы команды. `command-support` не импортирует
@@ -163,7 +162,7 @@ Fallback находится за пределами timeout/Bulkhead/CB/Retry и
 
 Bulkhead допускает максимум заданного числа незавершённых задач и не ждёт свободного
 слота. У proxy сохранены собственные лимиты admission/pool: они защищают транспорт
-и при использовании библиотеки без resilience. Уменьшение одного лимита не меняет другой.
+и при использовании библиотеки без обвязки команд. Уменьшение одного лимита не меняет другой.
 
 Нативные метрики приложения доступны через `ProxyCommands.bulkhead()`, `circuitBreaker()` и
 `timeLimiter()`; универсальный API предоставляет реальные объекты через registry lease `holder()`. Не добавляйте бросающие исключения или блокирующие event listeners;

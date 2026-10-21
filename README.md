@@ -2,8 +2,7 @@
 
 Потоковый reverse proxy на Java 21, Spring Boot **4.1.1**, Spring WebMVC,
 Jetty **12.1.12** из BOM Spring Boot, Netty **4.2.19.Final**
-и Resilience4j **2.4.0**. Приложение использует модули `app`, `proxy` и `command-support`; прежний
-`resilience` сохранён в сборке как самостоятельная совместимая библиотека.
+и Resilience4j **2.4.0**. Приложение использует модули `app`, `proxy` и `command-support`.
 Модули Netty согласованно зафиксированы через Gradle `enforcedPlatform` и Netty BOM.
 Jetty принимает запросы, Netty устанавливает соединения с upstream.
 Тела запросов и ответов передаются порциями; размер тела не определяет размер буферов прокси.
@@ -38,7 +37,6 @@ Raw query и существующие `%XX`-последовательности
 | `app` | Spring Boot, Jetty, MVC, фильтр, композиция команд и прокси, настройки и Processor beans | `app/build/libs/app-1.0.0.jar` — исполняемое приложение |
 | `proxy` | `ProxyEngine`, SPI, Netty, async Servlet I/O, обратное давление и пулы | `proxy/build/libs/proxy-1.0.0.jar` — обычная библиотека |
 | `command-support` | Reactor Command API, ресурсный lifecycle, TimeLimiter, Bulkhead, CircuitBreaker и opt-in Retry | `command-support/build/libs/command-support-1.0.0.jar` — библиотека приложения |
-| `resilience` | Прежний CompletionStage API, сохранён для существующих клиентов | `resilience/build/libs/resilience-1.0.0.jar` — отдельная библиотека |
 
 `app` зависит от `proxy` и `command-support`. Между транспортом и библиотекой команд нет зависимости: стык находится только в `app`.
 Модуль `proxy` не зависит от Spring Boot или Jetty. Его код использует Netty,
