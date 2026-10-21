@@ -65,6 +65,10 @@ public final class JettyProxyIoAdapter implements ProxyIoAdapter {
             this.coreResponse = coreResponse;
         }
 
+        // Response.write передаёт данные прямо в HttpStream, не в буфер Servlet HttpOutput.
+        // Пустая запись после каждой порции тела не добавляет отправленных данных.
+        @Override public boolean flushesOnWrite() { return true; }
+
         /** Передаёт текущую порцию без завершения ответа; completion подтверждает возврат буфера. */
         @Override
         public void write(ByteBuffer buffer, Completion completion) {

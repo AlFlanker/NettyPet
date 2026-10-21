@@ -1,0 +1,134 @@
+{
+  "date": "2026-10-21",
+  "base_commit": "7826a20b2887946512cab3361c5d0d0e76b4d973",
+  "environment": {
+    "cpu_quota": 4,
+    "memory_limit_gib": 32,
+    "java": "Eclipse Temurin 21.0.9+10",
+    "gradle": "8.14.3",
+    "jmeter": "5.6.3",
+    "jvm_args": [
+      "-Xms256m",
+      "-Xmx1g"
+    ],
+    "topology": "generator, proxy and Python upstream on one Linux amd64 machine"
+  },
+  "baseline": {
+    "jar_sha256": "4de20777a4b09209041ff1b6212c3e666383e33c67772bd169223f656b6c2d2b",
+    "io_threads": 2,
+    "chunk_bytes": 16384,
+    "response_buffer_bytes": 262144
+  },
+  "candidate": {
+    "jar_sha256": "78c4f632916029b84159a1108c60d3cfc8ab0cbeeae6e27ec46e8ae1cee7775e",
+    "io_threads": 2,
+    "chunk_bytes": 65536,
+    "response_buffer_bytes": 262144,
+    "changes": [
+      "64 KiB default chunks",
+      "skip explicit flush when the downstream writer flushes on write"
+    ],
+    "follow_up_validation": "After these measurements, header-only flushing was preserved explicitly and covered by a new regression test. The measured JAR SHA-256 identifies the benchmark artifact before this follow-up; the corrected build passes 245 tests."
+  },
+  "verification": "Each measured sample: HTTP 200 and body size assertion. Three full-body SHA-256 checks before and after each run against direct upstream. Two alternating runs per version; same JMX timer of 300 rps. Shared-host measurements are not production capacity.",
+  "runs": [
+    {
+      "label": "old-1",
+      "url": "http://127.0.0.1:8080/proxy",
+      "reference_url": "http://127.0.0.1:9000/",
+      "body": {
+        "size": 8388364,
+        "sha256": "aa9ff5291fbc0b08b1dbed80a0941bbedccd910a0eae9af8fbe04ba9ce86cb9f"
+      },
+      "threads": 20,
+      "ramp_seconds": 2,
+      "timer_rps": 300,
+      "duration_seconds": 24.987,
+      "requests": 3643,
+      "errors": 0,
+      "rps": 145.79581382318807,
+      "mean_ms": 121.83475157836948,
+      "p95_ms": 214,
+      "proxy_cpu_seconds": 35.03,
+      "proxy_cpu_ms_per_request": 9.615701345045292
+    },
+    {
+      "label": "new-1",
+      "url": "http://127.0.0.1:8085/proxy",
+      "reference_url": "http://127.0.0.1:9000/",
+      "body": {
+        "size": 8388364,
+        "sha256": "aa9ff5291fbc0b08b1dbed80a0941bbedccd910a0eae9af8fbe04ba9ce86cb9f"
+      },
+      "threads": 20,
+      "ramp_seconds": 2,
+      "timer_rps": 300,
+      "duration_seconds": 25.014,
+      "requests": 4623,
+      "errors": 0,
+      "rps": 184.81650275845527,
+      "mean_ms": 91.43024010382868,
+      "p95_ms": 152,
+      "proxy_cpu_seconds": 34.75,
+      "proxy_cpu_ms_per_request": 7.516764006056673
+    },
+    {
+      "label": "old-2",
+      "url": "http://127.0.0.1:8080/proxy",
+      "reference_url": "http://127.0.0.1:9000/",
+      "body": {
+        "size": 8388364,
+        "sha256": "aa9ff5291fbc0b08b1dbed80a0941bbedccd910a0eae9af8fbe04ba9ce86cb9f"
+      },
+      "threads": 20,
+      "ramp_seconds": 2,
+      "timer_rps": 300,
+      "duration_seconds": 24.999,
+      "requests": 3894,
+      "errors": 0,
+      "rps": 155.76623064922597,
+      "mean_ms": 111.3020030816641,
+      "p95_ms": 192,
+      "proxy_cpu_seconds": 37.43000000000001,
+      "proxy_cpu_ms_per_request": 9.612223934257834
+    },
+    {
+      "label": "new-2",
+      "url": "http://127.0.0.1:8085/proxy",
+      "reference_url": "http://127.0.0.1:9000/",
+      "body": {
+        "size": 8388364,
+        "sha256": "aa9ff5291fbc0b08b1dbed80a0941bbedccd910a0eae9af8fbe04ba9ce86cb9f"
+      },
+      "threads": 20,
+      "ramp_seconds": 2,
+      "timer_rps": 300,
+      "duration_seconds": 24.987,
+      "requests": 4796,
+      "errors": 0,
+      "rps": 191.93980870052428,
+      "mean_ms": 86.9547539616347,
+      "p95_ms": 156,
+      "proxy_cpu_seconds": 30.069999999999993,
+      "proxy_cpu_ms_per_request": 6.269808173477896
+    }
+  ],
+  "summary": {
+    "baseline": {
+      "requests": 7537,
+      "rps": 150.78221902132597,
+      "mean_ms": 116.39299456016983,
+      "p95_ms": 204,
+      "proxy_cpu_ms_per_request": 9.613904736632614,
+      "errors": 0
+    },
+    "candidate": {
+      "requests": 9419,
+      "rps": 188.3762324753505,
+      "mean_ms": 89.15139611423719,
+      "p95_ms": 154,
+      "proxy_cpu_ms_per_request": 6.881834589659198,
+      "errors": 0
+    }
+  }
+}

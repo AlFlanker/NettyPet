@@ -82,6 +82,7 @@ class JettyProxyIoAdapterTest {
     @Test
     void nativeWriteKeepsTheSameBufferUntilTheRealCompletion() {
         Fixture f = fixture();
+        assertTrue(f.writer.flushesOnWrite(), "Core Response.write must not need a second empty write");
         ByteBuffer payload = ByteBuffer.allocateDirect(32);
         payload.position(3).limit(19);
         DownstreamWriter.Completion completion = mock(DownstreamWriter.Completion.class);

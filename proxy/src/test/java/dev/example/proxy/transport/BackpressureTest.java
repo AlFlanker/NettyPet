@@ -736,6 +736,79 @@ class BackpressureTest {
     }
 
     @Test
+    void flushingNativeWriterPublishesHeadersBeforeWaitingForFirstBodyByte() throws Exception {
+        try (Harness h = new Harness()) {
+            h.nativeMode();
+            field(h.exchange, "finalResponse", false);
+            field(h.exchange, "downstreamWriter", new DownstreamWriter() {
+                @Override public boolean flushesOnWrite() { return true; }
+                @Override public void write(ByteBuffer buffer, Completion completion) {
+                    h.nativeOutput.write(buffer, completion);
+                }
+                @Override public void flush(Completion completion) { h.nativeOutput.flush(completion); }
+            });
+            h.exchange.received(new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
+            h.exchange.readComplete();
+            h.drain();
+
+            assertEquals(0, h.nativeOutput.writeCalls);
+            assertEquals(1, h.nativeOutput.flushCalls, "Headers must not wait for the first body byte");
+            verify(h.channel, never()).read();
+            assertFalse(h.exchange.completion().toCompletableFuture().isDone());
+            h.nativeOutput.complete(null);
+            h.drain();
+            verify(h.channel, times(1)).read();
+
+            ByteBuf body = h.receive(repeated((byte) 3));
+            h.exchange.received(LastHttpContent.EMPTY_LAST_CONTENT);
+            h.exchange.readComplete();
+            h.drain();
+            assertEquals(1, body.refCnt());
+            h.nativeOutput.complete(null);
+            h.drain();
+            assertEquals(0, body.refCnt());
+            assertEquals(1, h.nativeOutput.flushCalls, "The later body write needs no second flush");
+            assertTrue(h.exchange.completion().toCompletableFuture().isDone());
+        }
+    }
+
+    @Test
+    void flushingNativeWriterNeedsNoEmptyWriteButStillHoldsReadAndCompletionUntilAcknowledged() throws Exception {
+        try (Harness h = new Harness()) {
+            h.nativeMode();
+            field(h.exchange, "downstreamWriter", new DownstreamWriter() {
+                @Override public boolean flushesOnWrite() { return true; }
+                @Override public void write(ByteBuffer buffer, Completion completion) {
+                    h.nativeOutput.write(buffer, completion);
+                }
+                @Override public void flush(Completion completion) { fail("Body write already flushes"); }
+            });
+            ByteBuf first = h.receive(repeated((byte) 21));
+            h.drain();
+            verify(h.channel, never()).read();
+            h.nativeOutput.complete(null);
+            h.drain();
+            verify(h.channel, times(1)).read();
+            assertEquals(0, first.refCnt());
+            assertFalse(h.exchange.completion().toCompletableFuture().isDone());
+
+            ByteBuf last = h.receive(repeated((byte) 22));
+            h.exchange.received(LastHttpContent.EMPTY_LAST_CONTENT);
+            h.exchange.readComplete();
+            h.drain();
+            assertEquals(1, last.refCnt());
+            verify(h.async, never()).complete();
+            h.nativeOutput.complete(null);
+            h.drain();
+
+            assertEquals(0, last.refCnt());
+            assertEquals(0, h.nativeOutput.flushCalls);
+            verify(h.async).complete();
+            verify(h.transport, times(1)).releaseAdmission();
+        }
+    }
+
+    @Test
     void nativeFinalBodyAndFlushBothHoldCompletionAndAdmission() throws Exception {
         try (Harness h = new Harness()) {
             h.nativeMode();

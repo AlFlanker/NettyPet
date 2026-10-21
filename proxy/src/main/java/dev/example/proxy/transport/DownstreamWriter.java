@@ -19,6 +19,13 @@ public interface DownstreamWriter {
      */
     void write(ByteBuffer buffer, Completion completion) throws IOException;
 
+    /**
+     * true, если успешный write уже публикует данные без дополнительного flush.
+     * По умолчанию адаптер может буферизовать данные, и транспорт явно вызывает flush.
+     * Подтверждения write всё равно нужно дождаться перед чтением следующей порции.
+     */
+    default boolean flushesOnWrite() { return false; }
+
     /** Отправляет накопленные данные и заголовки без окончания HTTP-ответа; результат сообщает единственным вызовом completion. */
     void flush(Completion completion) throws IOException;
 
