@@ -1,7 +1,7 @@
 {
-  "date": "2026-10-20",
+  "date": "2026-10-21",
   "build": "SUCCESSFUL",
-  "task": "clean build --rerun-tasks",
+  "task": "clean build --no-daemon --max-workers=4",
   "gradle": "8.14.3",
   "java": "21",
   "springBoot": "4.1.1",
@@ -11,13 +11,19 @@
   "resilience4j": "2.4.0",
   "tests": {
     "app": {
-      "tests": 65,
+      "tests": 74,
       "failures": 0,
       "errors": 0,
       "skipped": 0
     },
     "proxy": {
       "tests": 85,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "command-support": {
+      "tests": 84,
       "failures": 0,
       "errors": 0,
       "skipped": 0
@@ -29,25 +35,26 @@
       "skipped": 0
     }
   },
-  "totalTests": 168,
-  "independentReviewRoles": 7,
-  "reviewReport": "INDEPENDENT_REVIEW.md",
+  "totalTests": 261,
+  "independentReviewRoles": 5,
+  "reviewReport": "COMMAND_SUPPORT_REVIEW.md",
   "artifactChecks": {
     "nestedLibraryJarsMatch": true,
     "nettyVersionsAligned": true,
     "jettyVersionsAligned": true,
     "resilience4jVersionsAligned": true,
     "tomcatServerAbsent": true,
-    "moduleImportsIsolated": true
+    "moduleImportsIsolated": true,
+    "commandSupportBundled": true,
+    "legacyResilienceAbsentFromApp": true,
+    "reactorIncluded": true
   },
   "loadAndSoakTestsPerformed": false,
-  "productionDecision": "GO for isolated preproduction trials; production GO pending target SLO/load/soak/security/operations gates",
-  "newRegressionTests": 13,
+  "productionDecision": "Five-role functional review passed; production readiness/SLO/load/soak approval is outside this change",
   "realTlsIntegrationTests": 4,
   "upstreamHeaderDeadlineNetworkTests": 3,
-  "newRegressionBaselineTests": 155,
   "optimizationReport": "OPTIMIZATIONS.md",
-  "bootJarSha256": "8b8a001d573eb3db91e54e6678b938336d885ca44382c9725fb101ae29e2584b",
+  "bootJarSha256": "296aebc6a56d09b9a5d16804962582f902aede803e59f91128ef640bedca53db",
   "allocationExperiment": {
     "performed": true,
     "report": "perf/results.json",
@@ -88,7 +95,12 @@
   "confirmedFixes": [
     "P2: idle/unsolicited-closing channel retired before asynchronous close and excluded from pool acquisition",
     "Operational gap: app-only read-only JMX diagnostics and local lifecycle availability",
-    "Test race: HTTP response receipt does not imply completed transport cleanup"
+    "Test race: HTTP response receipt does not imply completed transport cleanup",
+    "Command admission is cold; bulkhead and registry lease last until acknowledged resource cleanup",
+    "One monotonic deadline gates initial/retry attempts and late results; retry callbacks use a bounded pool",
+    "Servlet fatal start errors preserve response ownership and Error propagation",
+    "All actual R4j registries receive lifecycle-aware Micrometer binding; filtered aliases and publication-close races are safe",
+    "Reactor Context is isolated per subscriber and preserved across retry/fallback"
   ],
   "idleRetirementRegression": {
     "failedBeforeFix": true,
@@ -96,5 +108,7 @@
     "method": "Real NIO socket with controlled delayed physical close models TLS close_notify interval"
   },
   "appShutdownDuringTrafficTestPassed": true,
-  "readOnlyJmxIntegrationTests": 3
+  "readOnlyJmxIntegrationTests": 3,
+  "additionalValidatedTests": 93,
+  "sourceSnapshotSha256": "2899e006bf7ad4771ae088bc24cb995b47ac87210364c405311797f2996898bc"
 }

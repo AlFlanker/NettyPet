@@ -5,22 +5,29 @@
 | Модуль | Зависимости и ответственность |
 | --- | --- |
 | `proxy` | Servlet API, Netty, SLF4J; потоковая передача, framing, буферы, upstream pools, транспортный lifecycle |
-| `resilience` | Resilience4j 2.4.0; generic-команда, TimeLimiter, Bulkhead, CircuitBreaker, отмена и lifecycle исполнителя |
+| `command-support` | Reactor API, Resilience4j 2.4.0; TimeLimiter, Bulkhead, CircuitBreaker, opt-in Retry, отмена и подтверждённая очистка |
+| `resilience` | Прежний CompletionStage API; сохранён для совместимости, приложение его не использует |
 | `app` | Зависит от обоих модулей; связывает HTTP-запрос с командой, настраивает политики и переводит отказы в HTTP |
 
-`proxy` не импортирует Resilience4j или типы команды. `resilience` не импортирует
-proxy, Servlet, Netty либо Spring. Между этими двумя библиотеками нет Gradle-зависимости.
-Spring Boot/Netty BOM применяются только к app/proxy; в runtimeClasspath resilience
-присутствуют только Resilience4j и SLF4J API.
+`proxy` не импортирует Resilience4j или типы команды. `command-support` не импортирует
+proxy, Servlet либо Netty. Между библиотеками транспорта и команд нет Gradle-зависимости.
+Spring Boot BOM согласует зависимости `command-support`; Spring и Micrometer интеграция
+не требует Actuator и не добавляет HTTP management endpoints.
 
 `ProxyFilter` выделяет `/proxy` и вызывает `ProxyRequestHandler`. Обработчик создаёт
-`ProxyRequestCommand` для конкретного запроса и передаёт её `CommandExecutor`.
-Только `Command.start()` обращается к `ProxyEngine.forwardAsync(...)`.
-Конструктор команды не создаёт соединений и не читает тело.
+`ProxyRequestCommand`, наследующую `AbstractResourceCommand<ProxyResult>`, и синхронно
+подписывается на её `execute(): Mono<ProxyResult>`. Только допущенный `doStart()`
+обращается к `ProxyEngine.forwardAsync(...)`. До возврата фильтра транспорт должен
+получить владение Servlet async либо команда должна синхронно отклонить запрос.
+Конструктор и создание Mono не создают соединений и не читают тело.
+
+Полный API обычных и ресурсных команд: [command-support/README.md](command-support/README.md).
 
 ## Контракты и завершение
 
-- `Command<T>.start()` — однократный короткий неблокирующий запуск операции.
+- `Command<T>.execute()` — холодный Mono; работа начинается только после подписки и admission.
+- `CommandAction<T>.start()` / ресурсный `doStart()` — короткий неблокирующий запуск операции.
+- Обычный `AbstractResilienceCommand.doExecute()` вызывается отложенно; синхронные ошибки попадают в fallback.
 - `CommandTask<T>.completion()` — результат после **фактического освобождения ресурсов**.
 - `CommandTask<T>.cancel(reason)` — неблокирующая кооперативная отмена.
 - `CommandExecution<T>.result()` — результат защищённой команды; TimeLimiter может
@@ -47,7 +54,7 @@ Scheduler Resilience4j напрямую к Servlet response не обращае�
 ## Порядок и смысл политик
 
 Сначала проверяется Bulkhead без ожидания, затем разрешение CircuitBreaker.
-TimeLimiter получает отдельный stage результата и запускается до `Command.start()`.
+TimeLimiter получает отдельный stage результата и запускается до ресурсного `doStart()`.
 Если отказ произошёл до запуска, команда не обращается к proxy. Отмена во время
 короткого `start()` запоминается и доставляется задаче после публикации её handle.
 
@@ -57,7 +64,7 @@ TimeLimiter получает отдельный stage результата и з
 
 Используется semaphore Bulkhead, а не ThreadPoolBulkhead: Servlet/Netty I/O уже
 асинхронный. Отдельный рабочий пул и дополнительная очередь для каждого запроса
-не нужны. На исполнителя приходится один scheduler для deadlines.
+не нужны. Декоратор использует общий scheduler для deadlines и разрешённых retry-пауз.
 
 В Resilience4j 2.4.0 CompletionStage-вариант TimeLimiter завершает future исключением,
 но сам не закрывает сокет и не вызывает `CommandTask.cancel()`. Поэтому отмена здесь
@@ -114,9 +121,9 @@ PROXY_UPSTREAM=http://localhost:9000 ./gradlew :app:bootRun \
   --args='--proxy-command.timeout=5s --proxy.response-headers-timeout=2s --proxy-command.max-concurrent=64'
 ```
 
-По умолчанию один executor защищает общую логическую группу `/proxy`, включая
+По умолчанию одна именованная политика защищает общую логическую группу `/proxy`, включая
 разрешённые Processor изменения origin. Если upstream требуют независимой изоляции,
-создайте в app ограниченный набор именованных executor-профилей и выбирайте его при
+создайте в app ограниченный набор именованных политик и выбирайте его при
 композиции. Не создавайте CircuitBreaker на каждый произвольный URI или client ID.
 
 `proxy-command.timeout` и `proxy.exchange-timeout` независимы. Первый — политика
@@ -128,10 +135,26 @@ Ignore: одного такого события недостаточно, чт�
 
 ## Lifecycle и ограничения
 
-Исполнитель создаётся один раз на логическую группу, а команда — один раз на запрос.
-При закрытии executor прекращает приём, запрашивает отмену активных задач и останавливает
-scheduler. Очистка задач остаётся кооперативной. В app Spring сначала закрывает
-executor, затем ProxyEngine, который завершает сетевые ресурсы.
+Общий `CommandResilienceDecorator` обслуживает именованные политики; команда создаётся
+один раз на HTTP-запрос. При закрытии декоратор прекращает приём, запрашивает отмену
+активных задач и останавливает scheduler. Очистка остаётся кооперативной. В app Spring
+сначала закрывает `ProxyCommands`/декоратор, затем `ProxyEngine`.
+
+`CommandConfigRegistry` удерживает lease до фактической очистки; `clearCache(prefix)`
+и `clearAllCaches()` атомарно отклоняются для используемых записей. `ProxyCommands`
+также удерживает lease на всё время жизни JMX-подписок: команды и диагностика всегда
+используют одни и те же лимитеры. Смена свойств существующего имени без idle clear запрещена.
+
+Retry выключен по умолчанию. Для повторяемых операций вне прокси нужны одновременно
+`maxAttempts > 1` и `replayable=true`; повторяются только `RetryableException`.
+Новая попытка начинается после cleanup предыдущей; общий deadline включает паузы и
+ожидания. Fallback применяется к окончательному результату. Для Servlet HTTP body
+повторы остаются выключенными независимо от метода запроса.
+
+Fallback находится за пределами timeout/Bulkhead/CB/Retry исходной команды.
+Он может начаться до завершения её cleanup; для собственного сетевого вызова fallback
+нужна отдельная ограниченная политика. Возврат исходного permit не ожидает fallback.
+Отмена подписки отменяет активный fallback и не инициирует новый.
 
 `start()`, `cancel()`, event listeners Resilience4j и callbacks CompletionStage должны
 быть неблокирующими. TimeLimiter не умеет безопасно прервать синхронный Processor,
@@ -142,8 +165,8 @@ Bulkhead допускает максимум заданного числа не�
 слота. У proxy сохранены собственные лимиты admission/pool: они защищают транспорт
 и при использовании библиотеки без resilience. Уменьшение одного лимита не меняет другой.
 
-Нативные метрики доступны через `CommandExecutor.bulkhead()`, `circuitBreaker()` и
-`timeLimiter()`. Не добавляйте бросающие исключения или блокирующие event listeners;
+Нативные метрики приложения доступны через `ProxyCommands.bulkhead()`, `circuitBreaker()` и
+`timeLimiter()`; универсальный API предоставляет реальные объекты через registry lease `holder()`. Не добавляйте бросающие исключения или блокирующие event listeners;
 это нарушает контракт Resilience4j и может затормозить I/O. HTTP endpoint мониторинга
 в библиотеках не регистрируется.
 

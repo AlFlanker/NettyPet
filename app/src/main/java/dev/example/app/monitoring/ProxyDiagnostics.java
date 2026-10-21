@@ -1,8 +1,7 @@
 package dev.example.app.monitoring;
 
-import dev.example.proxy.api.ProxyResult;
 import dev.example.proxy.transport.ProxyEngine;
-import dev.example.resilience.CommandExecutor;
+import dev.example.app.command.ProxyCommands;
 import java.util.concurrent.atomic.LongAdder;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.availability.ApplicationAvailability;
@@ -30,7 +29,7 @@ import org.springframework.stereotype.Component;
         description = "Read-only proxy and resilience diagnostics; readiness is local, not upstream health")
 public final class ProxyDiagnostics {
     private final ProxyEngine engine;
-    private final CommandExecutor<ProxyResult> commands;
+    private final ProxyCommands commands;
     private final ApplicationAvailability availability;
     private final LongAdder bulkheadRejected = new LongAdder();
     private final LongAdder circuitRejected = new LongAdder();
@@ -38,7 +37,7 @@ public final class ProxyDiagnostics {
     private final LongAdder timeLimiterErrors = new LongAdder();
     private final LongAdder timeLimiterTimeouts = new LongAdder();
 
-    public ProxyDiagnostics(ProxyEngine engine, CommandExecutor<ProxyResult> commands,
+    public ProxyDiagnostics(ProxyEngine engine, ProxyCommands commands,
                             ApplicationAvailability availability) {
         this.engine = engine;
         this.commands = commands;

@@ -37,15 +37,16 @@ public abstract class AbstractResilienceCommand<T> implements Command<T> {
      */
     @Override
     public final Mono<T> execute() {
-        var context = CommandContext.builder()
-                .commandName(getCommandName())
-                .properties(commandProperties)
-                .build();
-        return resilienceDecorator.decorate(doExecute(), context)
-                .onErrorResume(e -> {
-                    logResilienceError(e, getCommandName());
-                    return fallbackOnError(e);
-                });
+        return Mono.defer(() -> {
+            var context = CommandContext.builder()
+                    .commandName(getCommandName())
+                    .properties(commandProperties)
+                    .build();
+            return resilienceDecorator.decorate(this::doExecute, context);
+        }).onErrorResume(e -> {
+            logResilienceError(e, getCommandName());
+            return fallbackOnError(e);
+        });
     }
 
     /**
@@ -54,7 +55,8 @@ public abstract class AbstractResilienceCommand<T> implements Command<T> {
     protected abstract String getCommandName();
 
     /**
-     * Специфичная логика выполнения. Вызывается внутри декоратора.
+     * Специфичная логика выполнения. Вызывается после подписки и допуска политик.
+     * Источники с асинхронной очисткой внешних ресурсов используют AbstractResourceCommand.
      */
     protected abstract Mono<T> doExecute();
 

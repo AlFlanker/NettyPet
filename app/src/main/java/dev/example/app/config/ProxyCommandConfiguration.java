@@ -1,37 +1,32 @@
 package dev.example.app.config;
 
+import com.otr.portal.command.CommandConfigRegistry;
+import com.otr.portal.command.CommandResilienceDecorator;
+import com.otr.portal.command.ResilienceRegistryConfig;
+import com.otr.portal.command.config.CommandProperties;
+import com.otr.portal.command.execution.CommandCancelledException;
+import com.otr.portal.command.execution.CommandNotExecutedException;
+import dev.example.app.command.ProxyCommands;
 import dev.example.app.command.ProxyRequestHandler;
 import dev.example.proxy.api.ProxyResult;
 import dev.example.proxy.transport.ProxyEngine;
-import dev.example.resilience.CommandCancelledException;
-import dev.example.resilience.CommandExecutor;
-import dev.example.resilience.CommandNotExecutedException;
-import io.github.resilience4j.bulkhead.BulkheadConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
-import io.github.resilience4j.timelimiter.TimeLimiterConfig;
-import java.time.Duration;
 import java.util.concurrent.TimeoutException;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.context.annotation.Import;
 
-/** Единственное место, где политика команд сопоставляется с результатами proxy. */
+/** The application alone defines which transport results indicate upstream failure. */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(ProxyCommandProperties.class)
+@Import({ResilienceRegistryConfig.class, CommandConfigRegistry.class, CommandResilienceDecorator.class})
 public class ProxyCommandConfiguration {
     @Bean(destroyMethod = "close")
-    @DependsOn("proxyEngine") // При shutdown сначала отменяем команды, затем останавливаем I/O.
-    CommandExecutor<ProxyResult> proxyCommands(ProxyCommandProperties properties) {
-        BulkheadConfig bulkhead = BulkheadConfig.custom()
-                .maxConcurrentCalls(properties.maxConcurrent())
-                .maxWaitDuration(Duration.ZERO) // Никакого ожидания semaphore на servlet/I/O-потоке.
-                .writableStackTraceEnabled(false)
-                .build();
-        TimeLimiterConfig timeLimiter = TimeLimiterConfig.custom()
-                .timeoutDuration(properties.timeout())
-                .cancelRunningFuture(true) // Для CompletionStage реальная отмена обеспечивается CommandTask.
-                .build();
+    @DependsOn("proxyEngine") // Cancel commands before stopping their I/O owner.
+    ProxyCommands proxyCommands(ProxyCommandProperties properties, CommandConfigRegistry registry,
+                                CommandResilienceDecorator decorator) {
         CircuitBreakerConfig circuitBreaker = CircuitBreakerConfig.custom()
                 .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
                 .slidingWindowSize(properties.slidingWindowSize())
@@ -40,8 +35,8 @@ public class ProxyCommandConfiguration {
                 .waitDurationInOpenState(properties.waitDurationInOpenState())
                 .permittedNumberOfCallsInHalfOpenState(properties.permittedCallsInHalfOpenState())
                 .automaticTransitionFromOpenToHalfOpenEnabled(false)
-                // Полное streaming-время зависит от размера тела и медленного клиента.
-                // Такие таймауты не доказывают отказ upstream и исключены из его статистики.
+                // Total streaming time also depends on the client/body size. Unlike an
+                // upstream header timeout, its expiry does not prove backend failure.
                 .ignoreExceptions(CommandCancelledException.class, CommandNotExecutedException.class,
                         TimeoutException.class)
                 .recordResult(result -> result instanceof ProxyResult proxy &&
@@ -50,11 +45,19 @@ public class ProxyCommandConfiguration {
                 .slowCallDurationThreshold(properties.timeout().plusSeconds(1))
                 .writableStackTraceEnabled(false)
                 .build();
-        return new CommandExecutor<>("proxy", bulkhead, timeLimiter, circuitBreaker);
+        CommandProperties policy = CommandProperties.builder()
+                .timeout(properties.timeout())
+                .maxConcurrency(properties.maxConcurrent())
+                .circuitBreakerConfig(circuitBreaker)
+                // A Servlet request body cannot be replayed. Never retry this command.
+                .maxAttempts(1)
+                .replayable(false)
+                .build();
+        return new ProxyCommands(registry, decorator, policy);
     }
 
     @Bean
-    ProxyRequestHandler proxyRequestHandler(ProxyEngine engine, CommandExecutor<ProxyResult> proxyCommands) {
+    ProxyRequestHandler proxyRequestHandler(ProxyEngine engine, ProxyCommands proxyCommands) {
         return new ProxyRequestHandler(engine, proxyCommands);
     }
 }

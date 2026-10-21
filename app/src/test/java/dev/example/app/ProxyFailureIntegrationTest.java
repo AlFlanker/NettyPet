@@ -2,7 +2,7 @@ package dev.example.app;
 
 import dev.example.proxy.api.RequestProcessor;
 import dev.example.proxy.transport.ProxyEngine;
-import dev.example.resilience.CommandExecutor;
+import dev.example.app.command.ProxyCommands;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -229,7 +229,7 @@ class ProxyFailureIntegrationTest {
 
     private static void awaitReleased() {
         ProxyEngine engine = application.getBean(ProxyEngine.class);
-        CommandExecutor<?> commands = application.getBean("proxyCommands", CommandExecutor.class);
+        ProxyCommands commands = application.getBean("proxyCommands", ProxyCommands.class);
         await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> {
             assertEquals(0, engine.activeRequests());
             assertEquals(commands.bulkhead().getBulkheadConfig().getMaxConcurrentCalls(),
