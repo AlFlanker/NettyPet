@@ -1,0 +1,24 @@
+digraph download {
+  graph [rankdir=LR, bgcolor="white", pad="0.10", nodesep="0.25", ranksep="0.24", splines=polyline];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans", fontsize=12, fontcolor="#15344B", fillcolor="#EFF6FA", color="#45788F", penwidth=1.1, margin="0.14,0.09"];
+  edge [color="#417C89", penwidth=1.1, arrowsize=0.7, fontname="Noto Sans", fontsize=12, fontcolor="#15344B"];
+
+  pump [label="pumpDownload()\nНет writePending"];
+  read [label="responseContent\n.read()"];
+  batch [label="Мелкие фрагменты\nread(): без ожидания", fillcolor="#E0F2EF", color="#2D827B"];
+  write [label="downstream.write()\nЖдать callback"];
+  callback [label="Callback\nrelease(chunk)", fillcolor="#E0F2EF", color="#2D827B"];
+  demand [label="demand(...)\nresponseReady()"];
+
+  { rank=same; pump; callback; }
+  { rank=same; read; demand; }
+  { rank=same; batch; write; }
+  pump -> read;
+  read -> batch;
+  batch -> write [constraint=false];
+  write -> callback [constraint=false];
+  callback -> pump [constraint=false];
+  read -> demand [constraint=false, label="null"];
+  demand -> pump [constraint=false];
+  callback -> demand -> write [style=invis, weight=10];
+}

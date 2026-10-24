@@ -1,0 +1,23 @@
+digraph upload {
+  graph [rankdir=LR, bgcolor="white", pad="0.10", nodesep="0.26", ranksep="0.28", splines=polyline];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans", fontsize=12, fontcolor="#15344B", fillcolor="#EFF6FA", color="#45788F", penwidth=1.1, margin="0.14,0.09"];
+  edge [color="#417C89", penwidth=1.1, arrowsize=0.7, fontname="Noto Sans", fontsize=12, fontcolor="#15344B"];
+
+  ready [label="pumpUpload()\ninput.isReady()"];
+  read [label="input.read(...)\ncount > 0"];
+  normalize [label="buffer.position(0)\n.limit(count)", fillcolor="#E0F2EF", color="#2D827B"];
+  write [label="content.write(...)\nБуфер занят"];
+  callback [label="Callback / dispatch()\nowner.release()", fillcolor="#E0F2EF", color="#2D827B"];
+  done [label="endUpload()\ncontent.close()"];
+
+  { rank=same; ready; done; }
+  { rank=same; read; callback; }
+  { rank=same; normalize; write; }
+  ready -> read;
+  read -> normalize;
+  normalize -> write [constraint=false];
+  write -> callback [constraint=false];
+  callback -> ready [constraint=false];
+  ready -> done [constraint=false, label="EOF"];
+  done -> callback -> write [style=invis, weight=10];
+}
