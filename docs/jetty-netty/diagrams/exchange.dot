@@ -1,0 +1,19 @@
+digraph exchange {
+  graph [rankdir=LR, bgcolor="white", pad="0.08", nodesep="0.24", ranksep="0.20", splines=polyline];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans", fontsize=12, fontcolor="#15344B", fillcolor="#EFF6FA", color="#45788F", penwidth=1.1, margin="0.10,0.08"];
+  edge [color="#417C89", penwidth=1.1, arrowsize=0.7, fontname="Noto Sans", fontsize=12, fontcolor="#15344B"];
+
+  filter [label="ProxyFilter\nhandler.forward()"];
+  command [label="execute() → doStart()\nпосле допуска команды"];
+  prepare [label="engine.forwardAsync()\nprocessors → prepared\nпроверка origin"];
+  async [label="startAsync()\nProxyExchange.start()", fillcolor="#E0F2EF", color="#2D827B"];
+  loop [label="Один EventLoop\nacquire() → initialize()\npumpUpload/Download", fillcolor="#E0F2EF", color="#2D827B"];
+  cleanup [label="terminate()\nfinishCleanupIfReady()\ncompletion()"];
+  {rank=same; filter; cleanup;}
+  {rank=same; command; loop;}
+  {rank=same; prepare; async;}
+  filter -> command -> prepare;
+  prepare -> async [constraint=false];
+  async -> loop -> cleanup [constraint=false];
+  cleanup -> loop -> async [style=invis, weight=10];
+}

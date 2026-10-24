@@ -1,0 +1,24 @@
+digraph lifecycle {
+  graph [rankdir=LR, bgcolor="white", pad="0.08", nodesep="0.24", ranksep="0.20", splines=polyline];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans", fontsize=12, fontcolor="#15344B", fillcolor="#EFF6FA", color="#45788F", penwidth=1.1, margin="0.10,0.08"];
+  edge [color="#417C89", penwidth=1.1, arrowsize=0.7, fontname="Noto Sans", fontsize=12, fontcolor="#15344B"];
+
+  terminal [label="terminate()\nterminal=true\nтаймеры / очередь"];
+  network [label="cleanupChannel()\nreuse: pool.release\nиначе: closeFuture\n→ pool.release"];
+  acquired [label="Поздний acquire\nобработан / возвращён"];
+  callback [label="Callback записи Jetty\nByteBuf.release()\npendingCleanup--"];
+  gate [label="finishCleanupIfReady()\ncleanupPrepared\nacquisitionObserved\npendingCleanup == 0", fillcolor="#E0F2EF", color="#2D827B"];
+  complete [label="releaseAdmissionOnce()\ncompletion.complete()", fillcolor="#E0F2EF", color="#2D827B"];
+  {rank=same; terminal; complete;}
+  {rank=same; network; gate;}
+  {rank=same; acquired; callback;}
+  terminal -> network;
+  terminal -> acquired;
+  network -> gate [constraint=false];
+  acquired -> gate [constraint=false];
+  callback -> gate [constraint=false];
+  gate -> complete [constraint=false];
+  acquired -> callback [style=invis, weight=10];
+  complete -> gate -> callback [style=invis, weight=10];
+  network -> acquired [style=invis, weight=10];
+}

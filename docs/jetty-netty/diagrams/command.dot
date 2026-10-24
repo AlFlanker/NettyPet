@@ -1,0 +1,21 @@
+digraph command {
+  graph [rankdir=LR, bgcolor="white", pad="0.08", nodesep="0.24", ranksep="0.20", splines=polyline];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans", fontsize=12, fontcolor="#15344B", fillcolor="#EFF6FA", color="#45788F", penwidth=1.1, margin="0.10,0.08"];
+  edge [color="#417C89", penwidth=1.1, arrowsize=0.7, fontname="Noto Sans", fontsize=12, fontcolor="#15344B"];
+
+  execute [label="ProxyRequestCommand\n.execute()"];
+  policy [label="Bulkhead admission\nCircuitBreaker\nTimeLimiter"];
+  task [label="doStart()\nengine.forwardAsync()\nCommandTask", fillcolor="#E0F2EF", color="#2D827B"];
+  cancel [label="Timeout / cancel\ncall.cancel(504 / 503)\nзапрос отмены"];
+  cleanup [label="ProxyCall.completion()\nтолько после cleanup", fillcolor="#E0F2EF", color="#2D827B"];
+  done [label="Bulkhead.onComplete()\nterminated → close()\nlease выполнения"];
+  {rank=same; execute; done;}
+  {rank=same; policy; cleanup;}
+  {rank=same; task; cancel;}
+  execute -> policy -> task;
+  task -> cleanup [constraint=false];
+  task -> cancel [style=dashed, constraint=false];
+  cancel -> cleanup [constraint=false];
+  cleanup -> done [constraint=false];
+  done -> cleanup -> cancel [style=invis, weight=10];
+}

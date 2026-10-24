@@ -1,0 +1,19 @@
+digraph startup {
+  graph [rankdir=LR, bgcolor="white", pad="0.08", nodesep="0.24", ranksep="0.20", splines=polyline];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans", fontsize=12, fontcolor="#15344B", fillcolor="#EFF6FA", color="#45788F", penwidth=1.1, margin="0.10,0.08"];
+  edge [color="#417C89", penwidth=1.1, arrowsize=0.7, fontname="Noto Sans", fontsize=12, fontcolor="#15344B"];
+
+  main [label="main()\nSpringApplication.run()\nbinding свойств"];
+  engine [label="proxyEngine()\nProxyOptions + processors\nNettyTransport", fillcolor="#E0F2EF", color="#2D827B"];
+  policy [label="proxyCommands()\nреестр + decorator\nобщая политика"];
+  handler [label="proxyRequestHandler()\nengine + commands"];
+  filter [label="proxyFilter()\n/*, REQUEST, async\nдо чтения тела", fillcolor="#E0F2EF", color="#2D827B"];
+  {rank=same; main; filter;}
+  {rank=same; engine; handler;}
+  main -> engine;
+  engine -> policy;
+  policy -> handler [constraint=false];
+  engine -> handler [constraint=false];
+  handler -> filter [constraint=false];
+  main -> filter [style=invis, weight=10];
+}

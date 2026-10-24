@@ -1,0 +1,19 @@
+digraph processors {
+  graph [rankdir=LR, bgcolor="white", pad="0.08", nodesep="0.24", ranksep="0.20", splines=polyline];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans", fontsize=12, fontcolor="#15344B", fillcolor="#EFF6FA", color="#45788F", penwidth=1.1, margin="0.10,0.08"];
+  edge [color="#417C89", penwidth=1.1, arrowsize=0.7, fontname="Noto Sans", fontsize=12, fontcolor="#15344B"];
+
+  plan [label="IncomingRequest\nProxyRequest\nтолько REQUEST"];
+  pipeline [label="ProcessorPipeline\n.execute()\nServlet-поток"];
+  hooks [label="RequestProcessor\n@Order → process()\nchain.proceed() один раз", fillcolor="#E0F2EF", color="#2D827B"];
+  prepared [label="PreparedRequest\n.capture()\nснимок и очистка"];
+  origin [label="Origin проверен\nпо allowlist"];
+  async [label="Только теперь\nstartAsync()\nи сеть", fillcolor="#E0F2EF", color="#2D827B"];
+  {rank=same; plan; async;}
+  {rank=same; pipeline; origin;}
+  {rank=same; hooks; prepared;}
+  plan -> pipeline -> hooks;
+  hooks -> prepared [constraint=false];
+  prepared -> origin -> async [constraint=false];
+  async -> origin -> prepared [style=invis, weight=10];
+}
