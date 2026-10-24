@@ -6,4 +6,4 @@ pluginManagement {
 }
 
 rootProject.name = 'async-proxy'
-include 'app', 'proxy', 'command-support'
+include 'app', 'proxy', 'command-support', 'jetty-client-example'
