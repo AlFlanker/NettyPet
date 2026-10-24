@@ -37,6 +37,11 @@ Raw query и существующие `%XX`-последовательности
 | `app` | Spring Boot, Jetty, MVC, фильтр, композиция команд и прокси, настройки и Processor beans | `app/build/libs/app-1.0.0.jar` — исполняемое приложение |
 | `proxy` | `ProxyEngine`, SPI, Netty, async Servlet I/O, обратное давление и пулы | `proxy/build/libs/proxy-1.0.0.jar` — обычная библиотека |
 | `command-support` | Reactor Command API, ресурсный lifecycle, TimeLimiter, Bulkhead, CircuitBreaker и opt-in Retry | `command-support/build/libs/command-support-1.0.0.jar` — библиотека приложения |
+| `jetty-client-example` | Самостоятельный пример Servlet + Jetty HttpClient без Netty и Spring Security | `jetty-client-example/build/libs/jetty-client-example-1.0.0.jar` — отдельное приложение |
+
+[`jetty-client-example`](jetty-client-example/README.md) запускается отдельно на порту `8081`.
+В нём показана потоковая передача GET и POST/PUT через Jetty HttpClient;
+описаны команды запуска, проверки multipart и границы примера.
 
 `app` зависит от `proxy` и `command-support`. Между транспортом и библиотекой команд нет зависимости: стык находится только в `app`.
 Модуль `proxy` не зависит от Spring Boot или Jetty. Его код использует Netty,

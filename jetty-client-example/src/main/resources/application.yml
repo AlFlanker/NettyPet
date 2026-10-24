@@ -1,0 +1,31 @@
+spring:
+  mvc:
+    formcontent:
+      filter:
+        # Иначе глобальный фильтр MVC может прочитать form PUT/PATCH/DELETE до proxy Servlet.
+        enabled: false
+
+server:
+  address: 127.0.0.1
+  port: 8081
+  max-http-request-header-size: 16KB
+  compression:
+    enabled: false
+
+example:
+  proxy:
+    # Фиксированное назначение; необязательный base path добавляется перед путём запроса.
+    upstream: ${PROXY_UPSTREAM:http://127.0.0.1:9000}
+    # Upload-порция, буфер чтения upstream и массив переносимого downstream I/O.
+    chunk-bytes: 65536
+    # Число принятых незавершённых обменов; при заполнении — 503.
+    max-concurrent: 128
+    # Общие лимиты на destination, не на selector.
+    max-connections-per-destination: 64
+    max-queued-requests-per-destination: 64
+    selectors: 2
+    connect-timeout: 3s
+    # Абсолютный срок обмена, включая ожидание соединения и передачу тела.
+    exchange-timeout: 60s
+    # Отсутствие сетевого трафика в соединении, включая активную передачу.
+    idle-timeout: 30s
