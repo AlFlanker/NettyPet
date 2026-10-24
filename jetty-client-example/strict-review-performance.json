@@ -1,0 +1,373 @@
+{
+  "date": "2026-10-24T19:30:39.179989+00:00",
+  "purpose": "Short performance smoke before/after strict review; not an SLO or production capacity result.",
+  "environment": {
+    "java": "openjdk version \"21.0.9\" 2025-10-21 LTS\nOpenJDK Runtime Environment Temurin-21.0.9+10 (build 21.0.9+10-LTS)\nOpenJDK 64-Bit Server VM Temurin-21.0.9+10 (build 21.0.9+10-LTS, mixed mode, sharing)",
+    "jmeter": "5.6.3",
+    "jvm_args": [
+      "-Xms256m",
+      "-Xmx1g",
+      "-XX:ActiveProcessorCount=4"
+    ],
+    "cpu_max": "400000 100000",
+    "memory_max": "34359738368",
+    "topology": "Generator, one shared Python upstream, and both proxy JVMs on one machine; only one variant receives load at a time."
+  },
+  "variants": {
+    "before": {
+      "jar_sha256": "41f44037f4d3d32965070f961933636d5538675816857fb820614b46205c2567",
+      "max_response_headers_bytes": null
+    },
+    "after": {
+      "jar_sha256": "e54700d8d7f3c95e34d8645b435d0f061162bffb542323f23fe5edf28578e5f5",
+      "max_response_headers_bytes": 16384,
+      "source_commit": "6d9c7f0"
+    }
+  },
+  "library_versions": {
+    "spring_boot": "4.1.1",
+    "jetty": "12.1.12"
+  },
+  "shared_proxy_parameters": {
+    "selectors": 2,
+    "chunk_bytes": 65536,
+    "max_concurrent": 128,
+    "max_connections_per_destination": 64,
+    "max_queued_requests_per_destination": 64,
+    "exchange_timeout_seconds": 60,
+    "idle_timeout_seconds": 30
+  },
+  "workload": {
+    "large_body_bytes": 8388608,
+    "large_body_sha256": "7d212b9c884f5c77896de960ae17cc341cda43b14d6a971f34ca29ebd4badf7f",
+    "tiny_body_bytes": 65536,
+    "tiny_body_sha256": "1f8745f0d2d1387ec1af2211a3cf417b2e9e885e853472649c1d979d0e9370e3",
+    "large_clients": 20,
+    "large_run_seconds": 12,
+    "warmup_seconds_per_variant": 10,
+    "order": [
+      "before",
+      "after",
+      "after",
+      "before"
+    ],
+    "tiny_clients": 2,
+    "tiny_run_seconds": 5,
+    "timer_rps": null,
+    "integrity": "HTTP200 and response-size assertion for every measured request; three complete body SHA256 checks against direct upstream before and after each phase."
+  },
+  "harness": {
+    "runner_sha256": "0553eff1caecf64bda0a09aa589d77e38f412c808f5619cfe3689ffa5c2c7269",
+    "jmx_sha256": "5108d54a095f80dbbe4d86ef93e5a373bb314fdbe19872b38bc400e8c8b1bf44",
+    "upstream_source_sha256": "1ada7a469fbacb4f49e755ff6269b9341905141ce5e0bb3f7dcfb40ae995cf17"
+  },
+  "limitations": [
+    "Two short runs per variant on one warmed JVM; no independent JVM forks or statistical confidence interval.",
+    "Shared CPU/network/memory with generator and upstream; no direct-upstream ceiling measured in this smoke.",
+    "Both variants are the Jetty example; before is the saved historical artifact, after is the strict-review working-tree build identified by its JAR SHA256.",
+    "Cleartext loopback HTTP1.1; no Security, TLS, uploads, slow-client, cancellation, or overload throughput scenario.",
+    "CPU sampling includes the JMeter launch window. RSS and thread counts are snapshots, not direct/native memory accounting or upper bounds.",
+    "Generator plus runner CPU includes JMeter startup and pre/post hash checks; cgroup CPU usage includes all processes in the shared environment.",
+    "Response header cap is the normal artifact default: unlimited before, 16384 bytes after; all fixture response metadata fits both.",
+    "Tiny runs are single short diagnostics per variant; their order is before/after."
+  ],
+  "runs": [
+    {
+      "url": "http://127.0.0.1:49977/proxy",
+      "reference_url": "http://127.0.0.1:33823/",
+      "body": {
+        "size": 8388608,
+        "sha256": "7d212b9c884f5c77896de960ae17cc341cda43b14d6a971f34ca29ebd4badf7f"
+      },
+      "threads": 20,
+      "ramp_seconds": 0,
+      "timer_rps": null,
+      "duration_seconds": 9.96,
+      "requests": 1651,
+      "errors": 0,
+      "rps": 165.76305220883532,
+      "mean_ms": 104.91883706844337,
+      "p95_ms": 200,
+      "proxy_cpu_seconds": 12.469999999999999,
+      "proxy_cpu_ms_per_request": 7.552998182919442,
+      "label": "warm-before",
+      "variant": "before",
+      "phase": "warmup",
+      "process_after": {
+        "VmHWM": "355148 kB",
+        "VmRSS": "355148 kB",
+        "Threads": "79"
+      },
+      "generator_and_runner_cpu_seconds": 25.843773000000002,
+      "phase_wall_seconds_including_validation": 12.8428845119779,
+      "cgroup_cpu_seconds": 43.081027,
+      "cgroup_cpu_cores_used_average": 3.3544665888586427,
+      "p99_ms": 323
+    },
+    {
+      "url": "http://127.0.0.1:47237/proxy",
+      "reference_url": "http://127.0.0.1:33823/",
+      "body": {
+        "size": 8388608,
+        "sha256": "7d212b9c884f5c77896de960ae17cc341cda43b14d6a971f34ca29ebd4badf7f"
+      },
+      "threads": 20,
+      "ramp_seconds": 0,
+      "timer_rps": null,
+      "duration_seconds": 9.974,
+      "requests": 1713,
+      "errors": 0,
+      "rps": 171.7465410066172,
+      "mean_ms": 101.6065382370111,
+      "p95_ms": 175,
+      "proxy_cpu_seconds": 14.049999999999997,
+      "proxy_cpu_ms_per_request": 8.201984821949793,
+      "label": "warm-after",
+      "variant": "after",
+      "phase": "warmup",
+      "process_after": {
+        "VmHWM": "352380 kB",
+        "VmRSS": "352380 kB",
+        "Threads": "82"
+      },
+      "generator_and_runner_cpu_seconds": 24.825154999999995,
+      "phase_wall_seconds_including_validation": 12.863391606952064,
+      "cgroup_cpu_seconds": 43.493264,
+      "cgroup_cpu_cores_used_average": 3.38116612857327,
+      "p99_ms": 223
+    },
+    {
+      "url": "http://127.0.0.1:49977/proxy",
+      "reference_url": "http://127.0.0.1:33823/",
+      "body": {
+        "size": 8388608,
+        "sha256": "7d212b9c884f5c77896de960ae17cc341cda43b14d6a971f34ca29ebd4badf7f"
+      },
+      "threads": 20,
+      "ramp_seconds": 0,
+      "timer_rps": null,
+      "duration_seconds": 11.964,
+      "requests": 2330,
+      "errors": 0,
+      "rps": 194.7509194249415,
+      "mean_ms": 89.86995708154507,
+      "p95_ms": 152,
+      "proxy_cpu_seconds": 12.759999999999998,
+      "proxy_cpu_ms_per_request": 5.476394849785407,
+      "label": "large-before-1",
+      "variant": "before",
+      "phase": "large",
+      "process_after": {
+        "VmHWM": "379860 kB",
+        "VmRSS": "376456 kB",
+        "Threads": "85"
+      },
+      "generator_and_runner_cpu_seconds": 31.42285100000001,
+      "phase_wall_seconds_including_validation": 14.791366259974893,
+      "cgroup_cpu_seconds": 50.719459,
+      "cgroup_cpu_cores_used_average": 3.4289908118390473,
+      "p99_ms": 182
+    },
+    {
+      "url": "http://127.0.0.1:47237/proxy",
+      "reference_url": "http://127.0.0.1:33823/",
+      "body": {
+        "size": 8388608,
+        "sha256": "7d212b9c884f5c77896de960ae17cc341cda43b14d6a971f34ca29ebd4badf7f"
+      },
+      "threads": 20,
+      "ramp_seconds": 0,
+      "timer_rps": null,
+      "duration_seconds": 11.975,
+      "requests": 2372,
+      "errors": 0,
+      "rps": 198.0793319415449,
+      "mean_ms": 85.86129848229342,
+      "p95_ms": 146,
+      "proxy_cpu_seconds": 13.129999999999999,
+      "proxy_cpu_ms_per_request": 5.5354131534569975,
+      "label": "large-after-1",
+      "variant": "after",
+      "phase": "large",
+      "process_after": {
+        "VmHWM": "371276 kB",
+        "VmRSS": "371276 kB",
+        "Threads": "87"
+      },
+      "generator_and_runner_cpu_seconds": 32.03273399999999,
+      "phase_wall_seconds_including_validation": 14.709888710000087,
+      "cgroup_cpu_seconds": 50.543563,
+      "cgroup_cpu_cores_used_average": 3.436026199548297,
+      "p99_ms": 180
+    },
+    {
+      "url": "http://127.0.0.1:47237/proxy",
+      "reference_url": "http://127.0.0.1:33823/",
+      "body": {
+        "size": 8388608,
+        "sha256": "7d212b9c884f5c77896de960ae17cc341cda43b14d6a971f34ca29ebd4badf7f"
+      },
+      "threads": 20,
+      "ramp_seconds": 0,
+      "timer_rps": null,
+      "duration_seconds": 12.019,
+      "requests": 2566,
+      "errors": 0,
+      "rps": 213.49529910974292,
+      "mean_ms": 81.85502727981294,
+      "p95_ms": 139,
+      "proxy_cpu_seconds": 11.729999999999997,
+      "proxy_cpu_ms_per_request": 4.571317225253311,
+      "label": "large-after-2",
+      "variant": "after",
+      "phase": "large",
+      "process_after": {
+        "VmHWM": "375484 kB",
+        "VmRSS": "375200 kB",
+        "Threads": "90"
+      },
+      "generator_and_runner_cpu_seconds": 33.26436699999999,
+      "phase_wall_seconds_including_validation": 14.732852237008046,
+      "cgroup_cpu_seconds": 50.794946,
+      "cgroup_cpu_cores_used_average": 3.447733350125248,
+      "p99_ms": 166
+    },
+    {
+      "url": "http://127.0.0.1:49977/proxy",
+      "reference_url": "http://127.0.0.1:33823/",
+      "body": {
+        "size": 8388608,
+        "sha256": "7d212b9c884f5c77896de960ae17cc341cda43b14d6a971f34ca29ebd4badf7f"
+      },
+      "threads": 20,
+      "ramp_seconds": 0,
+      "timer_rps": null,
+      "duration_seconds": 11.967,
+      "requests": 2371,
+      "errors": 0,
+      "rps": 198.12818584440544,
+      "mean_ms": 86.54070012652889,
+      "p95_ms": 148,
+      "proxy_cpu_seconds": 12.560000000000002,
+      "proxy_cpu_ms_per_request": 5.29734289329397,
+      "label": "large-before-2",
+      "variant": "before",
+      "phase": "large",
+      "process_after": {
+        "VmHWM": "385948 kB",
+        "VmRSS": "385948 kB",
+        "Threads": "89"
+      },
+      "generator_and_runner_cpu_seconds": 32.71398000000002,
+      "phase_wall_seconds_including_validation": 14.727278318023309,
+      "cgroup_cpu_seconds": 50.772206,
+      "cgroup_cpu_cores_used_average": 3.4474941604019764,
+      "p99_ms": 197
+    },
+    {
+      "url": "http://127.0.0.1:49977/proxy/tiny",
+      "reference_url": "http://127.0.0.1:33823/tiny",
+      "body": {
+        "size": 65536,
+        "sha256": "1f8745f0d2d1387ec1af2211a3cf417b2e9e885e853472649c1d979d0e9370e3"
+      },
+      "threads": 2,
+      "ramp_seconds": 0,
+      "timer_rps": null,
+      "duration_seconds": 4.944,
+      "requests": 552,
+      "errors": 0,
+      "rps": 111.6504854368932,
+      "mean_ms": 15.391304347826088,
+      "p95_ms": 23,
+      "proxy_cpu_seconds": 9.279999999999994,
+      "proxy_cpu_ms_per_request": 16.81159420289854,
+      "label": "tiny-before",
+      "variant": "before",
+      "phase": "tiny",
+      "process_after": {
+        "VmHWM": "539484 kB",
+        "VmRSS": "528716 kB",
+        "Threads": "89"
+      },
+      "generator_and_runner_cpu_seconds": 6.5263940000000105,
+      "phase_wall_seconds_including_validation": 7.77331169199897,
+      "cgroup_cpu_seconds": 16.397051,
+      "cgroup_cpu_cores_used_average": 2.1094035141904066,
+      "p99_ms": 28
+    },
+    {
+      "url": "http://127.0.0.1:47237/proxy/tiny",
+      "reference_url": "http://127.0.0.1:33823/tiny",
+      "body": {
+        "size": 65536,
+        "sha256": "1f8745f0d2d1387ec1af2211a3cf417b2e9e885e853472649c1d979d0e9370e3"
+      },
+      "threads": 2,
+      "ramp_seconds": 0,
+      "timer_rps": null,
+      "duration_seconds": 4.935,
+      "requests": 561,
+      "errors": 0,
+      "rps": 113.67781155015199,
+      "mean_ms": 15.231729055258468,
+      "p95_ms": 23,
+      "proxy_cpu_seconds": 8.110000000000007,
+      "proxy_cpu_ms_per_request": 14.456327985739762,
+      "label": "tiny-after",
+      "variant": "after",
+      "phase": "tiny",
+      "process_after": {
+        "VmHWM": "441700 kB",
+        "VmRSS": "432520 kB",
+        "Threads": "90"
+      },
+      "generator_and_runner_cpu_seconds": 6.617565999999982,
+      "phase_wall_seconds_including_validation": 7.783717763028108,
+      "cgroup_cpu_seconds": 16.183438,
+      "cgroup_cpu_cores_used_average": 2.0791398779731884,
+      "p99_ms": 33
+    }
+  ],
+  "large_body_summary": {
+    "before": {
+      "requests": 4701,
+      "rps": 196.43976432242698,
+      "mean_ms": 88.19081046585833,
+      "p95_ms": 150,
+      "p99_ms": 192,
+      "proxy_cpu_ms_per_request": 5.386088066368858,
+      "errors": 0
+    },
+    "after": {
+      "requests": 4938,
+      "rps": 205.80145036259066,
+      "mean_ms": 83.77946537059539,
+      "p95_ms": 143,
+      "p99_ms": 175,
+      "proxy_cpu_ms_per_request": 5.03442689347914,
+      "errors": 0
+    }
+  },
+  "tiny_summary": {
+    "before": {
+      "requests": 552,
+      "rps": 111.6504854368932,
+      "mean_ms": 15.391304347826088,
+      "p95_ms": 23,
+      "p99_ms": 28,
+      "proxy_cpu_ms_per_request": 16.81159420289854,
+      "errors": 0
+    },
+    "after": {
+      "requests": 561,
+      "rps": 113.67781155015199,
+      "mean_ms": 15.231729055258468,
+      "p95_ms": 23,
+      "p99_ms": 33,
+      "proxy_cpu_ms_per_request": 14.456327985739762,
+      "errors": 0
+    }
+  },
+  "validation": "All eight phases completed; every measured request passed HTTP200 and size checks; all pre/post full-body SHA256 comparisons matched; all owned proxy/upstream/generator processes were stopped."
+}
