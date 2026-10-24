@@ -9,6 +9,7 @@ import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.Closeable;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.ByteBuffer;
@@ -78,7 +79,7 @@ public final class JettyProxyServlet extends HttpServlet {
     @Override
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        if (request.getMethod().equalsIgnoreCase("CONNECT") || request.getHeader("Upgrade") != null
+        if (request.getMethod().equals("CONNECT") || request.getHeader("Upgrade") != null
                 || ProxyHeaders.hasToken(request, "Connection", "upgrade")) {
             reject(response, 501);
             return;
@@ -177,6 +178,7 @@ public final class JettyProxyServlet extends HttpServlet {
         private boolean headersFlushPending;
         private boolean finalHeaders;
         private boolean responseSucceeded;
+        private boolean requestSucceeded;
         private boolean noBody;
         private long uploaded;
 
@@ -195,11 +197,24 @@ public final class JettyProxyServlet extends HttpServlet {
         void dispatch(Runnable event) {
             events.add(event);
             if (work.getAndIncrement() != 0) return;
-            try { client.getExecutor().execute(this::drain); }
+            DrainTask task = new DrainTask();
+            try { client.getExecutor().execute(task); }
             catch (RejectedExecutionException stoppedExecutor) {
-                // Late I/O callbacks still own buffers after HttpClient.stop().
-                // Never run the drain inline under a Jetty callback's internal lock.
-                ForkJoinPool.commonPool().execute(this::drain);
+                task.close();
+            }
+        }
+
+        /** Jetty may accept a queued job and later discard it while stopping its executor. */
+        private final class DrainTask implements Runnable, Closeable {
+            private final AtomicBoolean claimed = new AtomicBoolean();
+            @Override public void run() {
+                if (claimed.compareAndSet(false, true)) drain();
+            }
+            @Override public void close() {
+                // Closeable is Jetty ThreadPool.reject's cleanup contract. The same
+                // claim also handles executors which both close and throw on reject.
+                if (claimed.compareAndSet(false, true))
+                    ForkJoinPool.commonPool().execute(Exchange.this::drain);
             }
         }
 
@@ -225,11 +240,17 @@ public final class JettyProxyServlet extends HttpServlet {
                 if (remaining <= 0) { fail(504, new TimeoutException("Exchange deadline")); return; }
                 deadline = timer.schedule(() -> dispatch(() -> fail(504, new TimeoutException("Exchange deadline"))),
                         remaining, TimeUnit.NANOSECONDS);
+                HttpFields.Mutable requestHeaders = HttpFields.build(ProxyHeaders.request(metadata, customizers));
+                int localStatus = ProxyHeaders.prepareForwarding(metadata.method(), requestHeaders);
+                if (localStatus != 0) {
+                    completeLocal(localStatus);
+                    return;
+                }
                 downstream = Downstream.create(incoming, outgoing, properties.chunkBytes(), this::dispatch,
                         failure -> fail(502, failure));
-                HttpFields requestHeaders = ProxyHeaders.request(metadata, customizers);
                 upstream = client.newRequest(metadata.target()).method(metadata.method()).followRedirects(false)
                         .idleTimeout(properties.idleTimeout().toMillis(), TimeUnit.MILLISECONDS);
+                upstream.onRequestSuccess(ignored -> dispatch(() -> requestSucceeded = true));
                 upstream.headers(headers -> {
                     for (var field : requestHeaders) headers.add(field);
                 });
@@ -332,6 +353,14 @@ public final class JettyProxyServlet extends HttpServlet {
             content.close();
         }
 
+        private void completeLocal(int status) {
+            terminal = true;
+            if (deadline != null) deadline.cancel(false);
+            reject(outgoing, status);
+            try { async.complete(); }
+            catch (IllegalStateException ignored) { }
+        }
+
         @Override public void onHeaders(Response response) {
             int code = response.getStatus();
             if (code == 100 || code == 102 || code == 103) return;
@@ -348,12 +377,15 @@ public final class JettyProxyServlet extends HttpServlet {
                 if (terminal || !servletAvailable) return;
                 if (code < 200 || code > 599 || code == 101)
                     throw new IllegalStateException("Unsupported upstream status " + code);
-                if (!ProxyHeaders.supportedTransferEncoding(headers.getValuesList("Transfer-Encoding")))
+                boolean metadataOnly = metadata.method().equals("HEAD") || code == 304;
+                if (!metadataOnly && !ProxyHeaders.supportedTransferEncoding(headers.getValuesList("Transfer-Encoding")))
                     throw new IllegalStateException("Unsupported upstream transfer coding");
+                if (code == 205 && headers.getLongField("Content-Length") > 0)
+                    throw new IllegalStateException("205 response cannot contain content");
                 if (finalHeaders) throw new IllegalStateException("Multiple final responses");
                 HttpFields responseHeaders = ProxyHeaders.response(metadata, code, headers, customizers);
                 finalHeaders = true;
-                noBody = metadata.method().equalsIgnoreCase("HEAD") || code == 204 || code == 205 || code == 304;
+                noBody = metadataOnly || code == 204 || code == 205;
                 outgoing.setStatus(code);
                 ProxyHeaders.applyResponse(responseHeaders, outgoing);
                 if (code == 204) outgoing.setHeader("Content-Length", null);
@@ -457,9 +489,10 @@ public final class JettyProxyServlet extends HttpServlet {
             dispatch(() -> {
                 if (terminal) return;
                 responseSucceeded = true;
-                if (uploadStopped && !uploadEnded) {
+                if (body && !requestSucceeded) {
                     // Before the final response body is received, Request.fail may also
-                    // abort that response. Only stop the sender after response success.
+                    // abort that response. Producer EOF is not sender completion: even
+                    // after content.close(), the terminating write may still be pending.
                     upstream.fail(new IOException("Upload stopped by early final response"));
                 }
                 pumpDownload();
@@ -470,8 +503,8 @@ public final class JettyProxyServlet extends HttpServlet {
             dispatch(() -> {
                 upstreamDone = true;
                 if (terminal) return;
-                boolean usefulEarlyResponse = uploadStopped && responseSucceeded && result.getResponseFailure() == null;
-                if (result.isFailed() && !usefulEarlyResponse) fail(status(result.getFailure()), result.getFailure());
+                boolean usefulResponse = responseSucceeded && result.getResponseFailure() == null;
+                if (result.isFailed() && !usefulResponse) fail(status(result.getFailure()), result.getFailure());
                 else pumpDownload();
             });
         }

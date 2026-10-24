@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.WritePendingException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.eclipse.jetty.ee11.servlet.ServletApiResponse;
 import org.eclipse.jetty.ee11.servlet.ServletContextResponse;
@@ -52,6 +53,9 @@ interface Downstream {
         private final int chunkBytes;
         private final Consumer<Runnable> dispatch;
         private final Consumer<Throwable> onError;
+        // A Servlet wrapper may report an error reentrantly from isReady/write/flush,
+        // or from another thread. Only this latch is changed on the callback thread.
+        private final AtomicReference<Throwable> firstError = new AtomicReference<>();
         private ByteBuffer buffer;
         private byte[] scratch;
         private Callback callback;
@@ -69,6 +73,8 @@ interface Downstream {
 
         @Override public void write(ByteBuffer bytes, Callback completion) {
             if (callback != null) throw new WritePendingException();
+            Throwable failure = firstError.get();
+            if (failure != null) { completion.failed(failure); return; }
             if (cancelled) { completion.failed(new IOException("Downstream cancelled")); return; }
             buffer = bytes;
             callback = completion;
@@ -78,29 +84,50 @@ interface Downstream {
         @Override public void flush(Callback completion) { write(BufferUtil.EMPTY_BUFFER, completion); }
 
         private void pump() {
-            if (callback == null || cancelled) return;
+            if (callback == null || stopIfFailed()) return;
             try {
-                if (!output.isReady()) return;
+                if (!ready()) return;
                 while (buffer.hasRemaining()) {
+                    if (stopIfFailed()) return;
                     if (scratch == null) scratch = new byte[chunkBytes];
                     int length = Math.min(buffer.remaining(), scratch.length);
                     buffer.get(scratch, 0, length);
+                    if (stopIfFailed()) return;
                     output.write(scratch, 0, length);
+                    if (stopIfFailed()) return;
                     // Even write(byte[]) may keep the array until readiness resumes.
-                    if (!output.isReady()) return;
+                    if (!ready()) return;
                 }
                 if (!flushing) {
+                    if (stopIfFailed()) return;
                     flushing = true;
                     output.flush();
-                    if (!output.isReady()) return;
+                    if (stopIfFailed()) return;
+                    if (!ready()) return;
                 }
+                if (stopIfFailed()) return;
                 complete(null);
             } catch (Throwable failure) {
-                complete(failure);
+                cancel(failure);
             }
         }
 
+        private boolean ready() {
+            if (stopIfFailed()) return false;
+            boolean ready = output.isReady();
+            return !stopIfFailed() && ready;
+        }
+
+        /** Runs on the exchange owner, so callbacks and memory cleanup stay serialized. */
+        private boolean stopIfFailed() {
+            Throwable failure = firstError.get();
+            if (failure == null) return cancelled;
+            cancel(failure);
+            return true;
+        }
+
         private void complete(Throwable failure) {
+            if (failure == null) failure = firstError.get();
             Callback completion = callback;
             callback = null;
             buffer = null;
@@ -112,17 +139,23 @@ interface Downstream {
         }
 
         @Override public void cancel(Throwable failure) {
+            firstError.compareAndSet(null, failure == null ? new IOException("Downstream cancelled") : failure);
             cancelled = true;
             // Never return scratch to a pool or use it again after cancellation.
             scratch = null;
-            complete(failure);
+            complete(firstError.get());
         }
 
         @Override public void onWritePossible() { dispatch.accept(this::pump); }
         @Override public void onError(Throwable failure) {
+            // Latch before enqueue: a reentrant error must invalidate an already
+            // computed readiness result before the current pump performs more I/O.
+            Throwable cause = failure == null ? new IOException("Servlet output failed") : failure;
+            if (!firstError.compareAndSet(null, cause)) return;
             dispatch.accept(() -> {
-                cancel(failure);
-                onError.accept(failure);
+                Throwable first = firstError.get();
+                cancel(first);
+                onError.accept(first);
             });
         }
     }

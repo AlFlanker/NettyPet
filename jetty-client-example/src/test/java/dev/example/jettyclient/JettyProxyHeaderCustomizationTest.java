@@ -48,6 +48,11 @@ import static org.junit.jupiter.api.Assertions.*;
 @Timeout(20)
 @Execution(ExecutionMode.SAME_THREAD)
 class JettyProxyHeaderCustomizationTest {
+    private static final Map<String, String> INJECTED_AUTHORIZATION = Map.of(
+            "NTLM", "NTLM dGVzdA==",
+            "Negotiate", "Negotiate dGVzdA==",
+            "Basic", "Basic dXNlcjpwYXNz",
+            "Bearer", "Bearer example-token");
     private static final ConcurrentLinkedQueue<String> CALLS = new ConcurrentLinkedQueue<>();
     private static final AtomicReference<ProxyRequestMetadata> METADATA = new AtomicReference<>();
     private static final AtomicReference<List<String>> EDITOR_VALUES = new AtomicReference<>();
@@ -144,6 +149,52 @@ class JettyProxyHeaderCustomizationTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"NTLM", "Negotiate"})
+    void rejectsConnectionBoundAuthorizationInjectedByCustomizerBeforeUpstream(String scheme) throws Exception {
+        int before = UPSTREAM_REQUESTS.get();
+
+        HttpResponse<byte[]> response = get("/inject-authorization/" + scheme);
+
+        assertEquals(501, response.statusCode());
+        assertEquals(0, response.body().length);
+        assertEquals(List.of("request:first", "request:second"), new ArrayList<>(CALLS));
+        assertEquals(before, UPSTREAM_REQUESTS.get(), "The final header policy must run before upstream I/O");
+        assertRecovers();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Basic", "Bearer"})
+    void forwardsRequestBoundAuthorizationInjectedByCustomizer(String scheme) throws Exception {
+        int before = UPSTREAM_REQUESTS.get();
+
+        HttpResponse<byte[]> response = get("/inject-authorization/" + scheme);
+
+        assertEquals(200, response.statusCode());
+        assertEquals("payload", new String(response.body(), StandardCharsets.US_ASCII));
+        assertEquals(before + 1, UPSTREAM_REQUESTS.get());
+        assertEquals(List.of(INJECTED_AUTHORIZATION.get(scheme)), RECEIVED.get().get("authorization"));
+    }
+
+    @Test
+    void checksAuthorizationPolicyAfterRemovingSourceConnectionNominationReaddedByHook() throws Exception {
+        int before = UPSTREAM_REQUESTS.get();
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress("127.0.0.1", port), 3000);
+            socket.setSoTimeout(5000);
+            socket.getOutputStream().write(("GET /proxy/nominated-authorization HTTP/1.1\r\nHost: localhost\r\n"
+                    + "Connection: close, Authorization\r\nAuthorization: Basic b3JpZ2luYWw6c2VjcmV0\r\n\r\n")
+                    .getBytes(StandardCharsets.US_ASCII));
+            socket.getOutputStream().flush();
+            String wire = new String(socket.getInputStream().readAllBytes(), StandardCharsets.ISO_8859_1);
+            assertTrue(wire.startsWith("HTTP/1.1 200"), wire);
+        }
+
+        assertEquals(before + 1, UPSTREAM_REQUESTS.get());
+        assertFalse(RECEIVED.get().containsKey("authorization"),
+                "The hook's NTLM field must be removed by final Connection sanitization before the auth policy");
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"Host", "Content-Length", "Connection", "Transfer-Encoding", "Expect", "Content-Type"})
     void rejectsProtectedRequestMutationBeforeUpstreamAndReleasesAdmission(String header) throws Exception {
         int before = UPSTREAM_REQUESTS.get();
@@ -188,6 +239,21 @@ class JettyProxyHeaderCustomizationTest {
             assertEquals(before + (phase.equals("response") ? 1 : 0), UPSTREAM_REQUESTS.get());
             assertRecovers();
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"assert-request", "assert-response", "linkage-request", "linkage-response"})
+    void customizerApplicationErrorsInBothPhasesReturnLocal500AndAllowRecovery(String scenario) throws Exception {
+        int before = UPSTREAM_REQUESTS.get();
+
+        HttpResponse<byte[]> response = get("/" + scenario);
+
+        assertEquals(500, response.statusCode());
+        assertEquals(0, response.body().length, "The upstream body must not escape a failed header hook");
+        assertTrue(response.headers().allValues("X-Upstream").isEmpty(),
+                "The upstream headers must not be committed before a failing response hook");
+        assertEquals(before + (scenario.endsWith("response") ? 1 : 0), UPSTREAM_REQUESTS.get());
+        assertRecovers();
     }
 
     private static HttpResponse<byte[]> get(String suffix) throws IOException, InterruptedException {
@@ -257,12 +323,21 @@ class JettyProxyHeaderCustomizationTest {
                     CALLS.add("request:first");
                     METADATA.set(metadata);
                     String path = metadata.target().getRawPath();
-                    if (path.startsWith("/reject-request/")) {
+                    if (path.startsWith("/inject-authorization/")) {
+                        headers.set("Authorization", INJECTED_AUTHORIZATION.get(
+                                path.substring("/inject-authorization/".length())));
+                    } else if (path.equals("/nominated-authorization")) {
+                        headers.add("Authorization", INJECTED_AUTHORIZATION.get("NTLM"));
+                    } else if (path.startsWith("/reject-request/")) {
                         headers.set(path.substring("/reject-request/".length()), "forged");
                     } else if (path.equals("/invalid-request")) {
                         headers.add("X-Invalid", "bad\r\nInjected: yes");
                     } else if (path.equals("/throw-request")) {
                         throw new IllegalStateException("Request customization failed");
+                    } else if (path.equals("/assert-request")) {
+                        throw new AssertionError("Request customization assertion failed");
+                    } else if (path.equals("/linkage-request")) {
+                        throw new NoClassDefFoundError("Request customization dependency is missing");
                     }
                     headers.add("X-Order", "first");
                     headers.set("X-Replace", "customized");
@@ -279,6 +354,10 @@ class JettyProxyHeaderCustomizationTest {
                         headers.add("X-Invalid", "bad\r\nInjected: yes");
                     } else if (path.equals("/throw-response")) {
                         throw new IllegalStateException("Response customization failed");
+                    } else if (path.equals("/assert-response")) {
+                        throw new AssertionError("Response customization assertion failed");
+                    } else if (path.equals("/linkage-response")) {
+                        throw new NoClassDefFoundError("Response customization dependency is missing");
                     }
                     headers.add("X-Order", "first");
                     headers.remove("X-Remove-Response");

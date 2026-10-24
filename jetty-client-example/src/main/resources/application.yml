@@ -18,6 +18,8 @@ example:
     upstream: ${PROXY_UPSTREAM:http://127.0.0.1:9000}
     # Upload-порция, буфер чтения upstream и массив переносимого downstream I/O.
     chunk-bytes: 65536
+    # Предел HTTP metadata upstream: headers, trailers и chunk extensions; не размер тела.
+    max-response-headers-bytes: 16384
     # Число принятых незавершённых обменов; при заполнении — 503.
     max-concurrent: 128
     # Общие лимиты на destination, не на selector.

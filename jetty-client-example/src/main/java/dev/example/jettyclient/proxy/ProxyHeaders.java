@@ -54,7 +54,7 @@ final class ProxyHeaders {
             for (ProxyHeaderCustomizer customizer : customizers) customizer.customizeRequest(metadata, editor);
             // Source Connection nominations remain excluded even when a hook re-adds them.
             return sanitize(editor.freeze(), excluded);
-        } catch (Exception failure) {
+        } catch (Exception | AssertionError | LinkageError failure) {
             throw new CustomizationFailure(failure);
         } finally {
             editor.close();
@@ -71,7 +71,7 @@ final class ProxyHeaders {
             for (ProxyHeaderCustomizer customizer : customizers)
                 customizer.customizeResponse(metadata, status, editor);
             return sanitize(editor.freeze(), excluded);
-        } catch (Exception failure) {
+        } catch (Exception | AssertionError | LinkageError failure) {
             throw new CustomizationFailure(failure);
         } finally {
             editor.close();
@@ -85,6 +85,35 @@ final class ProxyHeaders {
             if (seen.add(lower)) target.setHeader(field.getName(), field.getValue());
             else target.addHeader(field.getName(), field.getValue());
         }
+    }
+
+    /** Applies protocol rules to the final sanitized/customized fields; 0 means forward. */
+    static int prepareForwarding(String method, HttpFields.Mutable headers) {
+        // A shared connection must never acquire an identity that outlives this request.
+        for (String authorization : headers.getValuesList("Authorization")) {
+            String value = authorization.stripLeading();
+            int end = 0;
+            while (end < value.length() && value.charAt(end) != ' ' && value.charAt(end) != '\t') end++;
+            String scheme = value.substring(0, end);
+            if (scheme.equalsIgnoreCase("NTLM") || scheme.equalsIgnoreCase("Negotiate")) return 501;
+        }
+        if (!method.equals("OPTIONS") && !method.equals("TRACE")) return 0;
+        List<String> values = headers.getValuesList("Max-Forwards");
+        if (values.isEmpty()) return 0;
+        if (values.size() != 1) return 400;
+        String value = values.getFirst().trim();
+        if (value.isEmpty()) return 400;
+        // Accept arbitrary-length 1*DIGIT values without overflow or a BigInteger allocation.
+        // RFC 9110 permits capping the decremented result to our maximum supported value.
+        long count = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char digit = value.charAt(i);
+            if (digit < '0' || digit > '9') return 400;
+            count = Math.min((long)Integer.MAX_VALUE + 1, count * 10 + digit - '0');
+        }
+        if (count == 0) return method.equals("OPTIONS") ? 200 : 501;
+        headers.put("Max-Forwards", Long.toString(count - 1));
+        return 0;
     }
 
     private static HttpFields sanitize(HttpFields source, Set<String> sourceExcluded) {

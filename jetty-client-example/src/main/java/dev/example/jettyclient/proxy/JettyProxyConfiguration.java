@@ -19,7 +19,7 @@ import org.springframework.context.annotation.Configuration;
 public class JettyProxyConfiguration {
     @Bean(destroyMethod = "stop")
     HttpClient jettyHttpClient(JettyProxyProperties properties) throws Exception {
-        var client = new HttpClient(new HttpClientTransportOverHTTP(properties.selectors()));
+        var client = new ProxyHttpClient(new HttpClientTransportOverHTTP(properties.selectors()));
         client.setName("jetty-client-example-upstream");
         var tls = new SslContextFactory.Client(false);
         tls.setEndpointIdentificationAlgorithm("HTTPS");
@@ -31,6 +31,7 @@ public class JettyProxyConfiguration {
         client.setMaxConnectionsPerDestination(properties.maxConnectionsPerDestination());
         client.setMaxRequestsQueuedPerDestination(properties.maxQueuedRequestsPerDestination());
         client.setResponseBufferSize(properties.chunkBytes());
+        client.setMaxResponseHeadersSize(properties.maxResponseHeadersBytes());
         client.setConnectTimeout(properties.connectTimeout().toMillis());
         client.setIdleTimeout(properties.idleTimeout().toMillis());
         try {
