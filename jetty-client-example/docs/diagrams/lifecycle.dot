@@ -1,0 +1,21 @@
+digraph lifecycle {
+  graph [rankdir=LR, bgcolor="white", pad="0.10", nodesep="0.23", ranksep="0.24", splines=polyline];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans", fontsize=12, fontcolor="#15344B", fillcolor="#EFF6FA", color="#45788F", penwidth=1.1, margin="0.14,0.09"];
+  edge [color="#417C89", penwidth=1.1, arrowsize=0.7, fontname="Noto Sans", fontsize=12, fontcolor="#15344B"];
+
+  success [label="Успех и EOF\nonComplete()"];
+  finish [label="async.complete()\nterminal=true"];
+  failure [label="fail(code, cause)\nterminal=true"];
+  cancel [label="upstream.abort()\nОтмена I/O"];
+  gates [label="finishCleanup()\nupstreamDone\n!uploadPending\n!writePending\nretainedChunks=0", fillcolor="#E0F2EF", color="#2D827B"];
+  release [label="Один раз\nadmission.release()", fillcolor="#E0F2EF", color="#2D827B"];
+
+  { rank=same; success; failure; }
+  { rank=same; finish; cancel; }
+  { rank=same; gates; release; }
+  success -> finish;
+  failure -> cancel;
+  finish -> gates;
+  cancel -> gates;
+  gates -> release [constraint=false];
+}
