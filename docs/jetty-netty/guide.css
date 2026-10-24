@@ -1,0 +1,156 @@
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  color: #18222d;
+  background: #fff;
+  font-family: "Noto Sans", sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.36;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.sheet {
+  width: 210mm;
+  height: 297mm;
+  margin: 0 auto;
+  padding: 10mm 15mm;
+  display: grid;
+  grid-template-rows: 7.5mm minmax(0, 1fr) 7.5mm;
+  break-after: page;
+  page-break-after: always;
+}
+
+.sheet:last-of-type { break-after: auto; page-break-after: auto; }
+
+.page-header, .page-footer {
+  height: 7.5mm;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5mm;
+  color: #536478;
+  font-size: 7.5pt;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.page-header { border-bottom: 0.25mm solid #c9d5e1; }
+.page-footer { border-top: 0.25mm solid #c9d5e1; }
+
+.page-main {
+  min-width: 0;
+  min-height: 0;
+  padding: 2.5mm 0;
+  /* 262mm row: content stays visible so the builder can reject any overflow. */
+  overflow: visible;
+}
+
+h2 {
+  margin: 0 0 3mm;
+  color: #173d61;
+  font-size: 17pt;
+  line-height: 1.12;
+  font-weight: 700;
+}
+
+h3 {
+  margin: 3mm 0 1.5mm;
+  color: #173d61;
+  font-size: 11pt;
+  line-height: 1.15;
+}
+
+h4 { margin: 2.5mm 0 1mm; font-size: 10pt; }
+p { margin: 0 0 2.2mm; }
+ul, ol { margin: 0 0 2.2mm; padding-left: 5mm; }
+li { margin: 0 0 0.8mm; }
+li > p { margin-bottom: 1mm; }
+ul ul, ol ol, ul ol, ol ul { margin-bottom: 0; }
+
+a { color: #145c91; text-decoration: none; overflow-wrap: anywhere; }
+strong { font-weight: 700; }
+em { font-style: italic; }
+
+code, pre, kbd, samp {
+  font-family: "Noto Sans Mono", monospace;
+  font-size: 9pt;
+  line-height: 1.23;
+  font-variant-ligatures: none;
+}
+
+code { overflow-wrap: anywhere; }
+pre {
+  margin: 1.5mm 0 2.5mm;
+  padding: 2mm 2.5mm;
+  border: 0.2mm solid #d8e1e9;
+  border-radius: 1mm;
+  background: #f4f7fa;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+
+pre code { font-size: inherit; background: transparent; }
+div.sourceCode { margin: 0; }
+div.sourceCode > pre { margin-top: 1.5mm; }
+
+table {
+  width: 100%;
+  margin: 1.5mm 0 2.5mm;
+  border-collapse: collapse;
+  font-size: 9pt;
+  line-height: 1.25;
+}
+
+th, td {
+  padding: 1.3mm 1.6mm;
+  border: 0.2mm solid #cbd7e2;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+th { background: #eaf0f6; font-weight: 700; }
+td code, th code { font-size: 9pt; }
+
+/* Reserve enough room for long property names and test descriptions. */
+#sheet-14 table:first-of-type th:nth-child(1) { width: 41%; }
+#sheet-14 table:first-of-type th:nth-child(2) { width: 23%; }
+#sheet-14 table:first-of-type th:nth-child(3) { width: 36%; }
+#sheet-16 table:first-of-type th:nth-child(1) { width: 29%; }
+#sheet-16 table:first-of-type th:nth-child(2) { width: 71%; }
+
+figure { margin: 2mm 0 2.5mm; }
+img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100mm;
+  margin: 1.5mm auto 2mm;
+  object-fit: contain;
+}
+
+figcaption { margin-top: 1mm; color: #536478; font-size: 8.5pt; }
+blockquote {
+  margin: 2mm 0;
+  padding: 1mm 0 1mm 3mm;
+  border-left: 0.8mm solid #96b2ca;
+}
+
+blockquote > :last-child, .page-main > :last-child { margin-bottom: 0; }
+hr { margin: 2.5mm 0; border: 0; border-top: 0.2mm solid #cbd7e2; }
+
+@media print {
+  html, body { width: 210mm; }
+  .sheet { margin: 0; }
+}

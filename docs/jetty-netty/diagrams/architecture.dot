@@ -1,0 +1,21 @@
+digraph architecture {
+  graph [rankdir=LR, bgcolor="white", pad="0.08", nodesep="0.24", ranksep="0.20", splines=polyline];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans", fontsize=12, fontcolor="#15344B", fillcolor="#EFF6FA", color="#45788F", penwidth=1.1, margin="0.10,0.08"];
+  edge [color="#417C89", penwidth=1.1, arrowsize=0.7, fontname="Noto Sans", fontsize=12, fontcolor="#15344B"];
+
+  browser [label="Клиент\nHTTP-запрос"];
+  filter [label="Jetty / app\nProxyFilter"];
+  mvc [label="Spring MVC\n/local"];
+  command [label="app: команда\ncommand-support\n→ ProxyEngine", fillcolor="#E0F2EF", color="#2D827B"];
+  netty [label="proxy\nNettyTransport\nHTTP/1.1", fillcolor="#E0F2EF", color="#2D827B"];
+  upstream [label="Upstream\nразрешённый origin"];
+  {rank=same; browser; upstream;}
+  {rank=same; filter; netty;}
+  {rank=same; mvc; command;}
+  browser -> filter;
+  filter -> mvc [label="прочие пути"];
+  filter -> command [label="/proxy"];
+  command -> netty [constraint=false];
+  netty -> upstream [constraint=false];
+  mvc -> command [style=invis, weight=20];
+}

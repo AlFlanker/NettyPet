@@ -7,20 +7,28 @@ Jetty **12.1.12** из BOM Spring Boot, Netty **4.2.19.Final**
 Jetty принимает запросы, Netty устанавливает соединения с upstream.
 Тела запросов и ответов передаются порциями; размер тела не определяет размер буферов прокси.
 
+Подробный [PDF-гайд Jetty + Netty](docs/jetty-netty/jetty-netty-guide.pdf) содержит
+17 страниц и 8 диаграмм: карта модулей, порядок вызовов, передача тел, процессоры,
+ресурсные команды, таймауты и cleanup. [Исходники и пересборка](docs/jetty-netty/README.md).
+[Каталог гайдов](docs/README.md) также содержит отдельный вариант Jetty HttpClient.
+
 ## Запуск
 
-Нужны JDK 21 и доступ к репозиториям зависимостей. Gradle Wrapper **8.14.3** входит
-в проект; устанавливать Gradle отдельно не требуется. В Windows используйте `gradlew.bat`.
+Нужны JDK 21, Gradle **8.14.3** и доступ к репозиториям зависимостей.
+В текущем checkout есть скрипты `gradlew`, но отсутствуют JAR/properties из
+`gradle/wrapper`; используйте установленный Gradle. В подготовленной облачной
+среде задайте `NETTYPET_GRADLE=/workspace/.setup/gradle`.
 
 ```bash
-./gradlew clean build
+NETTYPET_GRADLE=gradle # В облачной среде: /workspace/.setup/gradle
+"$NETTYPET_GRADLE" clean build
 PROXY_UPSTREAM=http://localhost:9000 java -jar app/build/libs/app-1.0.0.jar
 ```
 
 Для запуска из исходников:
 
 ```bash
-PROXY_UPSTREAM=http://localhost:9000 ./gradlew :app:bootRun
+PROXY_UPSTREAM=http://localhost:9000 "$NETTYPET_GRADLE" :app:bootRun
 curl -i 'http://localhost:8080/proxy/example?x=1&x=2'
 curl --data-binary @large-file.bin http://localhost:8080/proxy/upload
 curl -i http://localhost:8080/local
@@ -389,7 +397,7 @@ framing, но не гарантирует изоляцию запросов, е�
 
 ## Проверки и производительность
 
-`./gradlew clean build` запускает unit-тесты API/HTTP-правил и интеграционные тесты с настоящим Jetty
+`"$NETTYPET_GRADLE" clean build` запускает unit-тесты API/HTTP-правил и интеграционные тесты с настоящим Jetty
 и локальными upstream-сокетами: большой binary body, chunked upload, ранний ответ,
 URI/headers, первая порция до окончания ответа, HEAD/204, timeout, повторное использование
 соединений и обрыв неполного ответа после commit. Тесты приложения также проверяют
@@ -421,9 +429,9 @@ throughput, p95/p99, heap/direct memory и поведение при медле�
 Проверка фактических зависимостей:
 
 ```bash
-./gradlew :app:dependencies --configuration runtimeClasspath
-./gradlew :proxy:dependencies --configuration runtimeClasspath
-./gradlew :command-support:dependencies --configuration runtimeClasspath
+"$NETTYPET_GRADLE" :app:dependencies --configuration runtimeClasspath
+"$NETTYPET_GRADLE" :proxy:dependencies --configuration runtimeClasspath
+"$NETTYPET_GRADLE" :command-support:dependencies --configuration runtimeClasspath
 ```
 
 Документация: [Spring Boot web servers](https://docs.spring.io/spring-boot/how-to/webserver.html),

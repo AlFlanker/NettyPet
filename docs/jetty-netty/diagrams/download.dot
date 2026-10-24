@@ -1,0 +1,19 @@
+digraph download {
+  graph [rankdir=LR, bgcolor="white", pad="0.08", nodesep="0.24", ranksep="0.20", splines=polyline];
+  node [shape=box, style="rounded,filled", fontname="Noto Sans", fontsize=12, fontcolor="#15344B", fillcolor="#EFF6FA", color="#45788F", penwidth=1.1, margin="0.10,0.08"];
+  edge [color="#417C89", penwidth=1.1, arrowsize=0.7, fontname="Noto Sans", fontsize=12, fontcolor="#15344B"];
+
+  demand [label="demand()\nочередь пуста\nwriter готов"];
+  socket [label="channel.read()\nAUTO_READ=false\nодин socket read"];
+  queue [label="received() → очередь\nretain(ByteBuf)\nreadComplete()"];
+  pump [label="pumpNativeDownload()\nмелкие chunks → batch", fillcolor="#E0F2EF", color="#2D827B"];
+  write [label="DownstreamWriter\n.write(ByteBuffer)\nодна запись"];
+  callback [label="Callback → EventLoop\nfinishDownstreamWrite()\nrelease()", fillcolor="#E0F2EF", color="#2D827B"];
+  {rank=same; demand; callback;}
+  {rank=same; socket; write;}
+  {rank=same; queue; pump;}
+  demand -> socket -> queue;
+  queue -> pump [constraint=false];
+  pump -> write -> callback -> demand [constraint=false];
+  callback -> write -> pump [style=invis, weight=10];
+}
