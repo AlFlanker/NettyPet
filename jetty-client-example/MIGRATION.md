@@ -268,6 +268,10 @@ cache hits настраиваются отдельно от streaming/rewrite ad
 
 Подключение, публикация и shutdown: [инструкция кэша](../examples/proxy/caching/README.md).
 Тесты host компилируют именно эти исходники и проверяют их с новым Jetty engine.
+Проверка `e8f4bb0` включает полный MISS → публикация → HTTP HIT и lifecycle
+очереди: [integration-verification.json](../stress/cache/evidence/e8f4bb0/integration-verification.json).
+Длительная нагрузка выполняется отдельно: [stress/cache](../stress/cache/README.md),
+[отчёт прогона](../stress/cache/evidence/e8f4bb0/RESULTS.md).
 Старый Netty writer factory продолжает выбирать blocking writer для такой обёртки;
 его путь записи этим изменением не переносится.
 
@@ -313,8 +317,10 @@ Resilience4j или retries. Эти механизмы сохраняются в
 Feature toggle остаётся будущим selector на этой границе. Не создавайте client
 на каждый запрос и не меняйте SSL identity активного client.
 
-Текущие исправления и проверки: [FIXES.md](../jetty-proxy/FIXES.md) и
-[fix-verification.json](../jetty-proxy/fix-verification.json). История выделения
+Исправления и проверка библиотечного runtime `46db231`:
+[FIXES.md](../jetty-proxy/FIXES.md) и
+[fix-verification.json](../jetty-proxy/fix-verification.json). Проверки прикладного
+кэша приведены отдельно в разделе выше. История выделения
 библиотек — [IMPLEMENTATION.md](../jetty-proxy/IMPLEMENTATION.md), предыдущий совет —
 [USAGE_REVIEW.md](../jetty-proxy/USAGE_REVIEW.md).
 Отчёты [INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md) и

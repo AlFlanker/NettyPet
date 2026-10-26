@@ -118,9 +118,20 @@ Unit-тесты подтверждают отсутствие чтения те�
 нехватке бюджета и превышении лимита тела. Настройки и код подключения находятся
 в [инструкции кэша](../examples/proxy/caching/README.md). Это тестовый пример
 интеграции; основные `/backend` handlers автоматически кэш не включают.
-Результат этапа кэша — [649 тестов, 36 новых cache-сценариев](../examples/proxy/caching/verification.json).
+Первоначальный этап кэша, commit `5206220`, сохранён как историческая проверка:
+[649 тестов, host 72, 36 cache-сценариев](../examples/proxy/caching/verification.json).
 
-Текущие исправления, проверенные артефакты и тестовые итоги:
+В commit `e8f4bb0` полная сборка проходит **665 тестов**, host suite — **88**.
+Добавлены 10 проверок publication queue и 6 end-to-end сценариев. Последние
+проверяют полный MISS → публикация → следующий HTTP HIT без повторного запроса
+к upstream, query variants, expiry, eviction, uncacheable и truncated responses.
+Детали: [integration-verification.json](../stress/cache/evidence/e8f4bb0/integration-verification.json).
+
+`cacheSoak` запускается отдельно от обычной сборки. Команда, ограничения и
+критерии находятся в [stress/cache](../stress/cache/README.md), статус длительного
+прогона — в [его отчёте](../stress/cache/evidence/e8f4bb0/RESULTS.md).
+
+Исправления и проверенные артефакты библиотечного runtime `46db231`:
 [FIXES.md](../jetty-proxy/FIXES.md),
 [fix-verification.json](../jetty-proxy/fix-verification.json).
 

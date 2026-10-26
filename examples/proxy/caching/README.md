@@ -141,11 +141,23 @@ metadata и lifecycle. Запуск из корня:
 gradle :jetty-proxy-integration-example:test
 ```
 
-Проверка кода `5206220`: полная `gradle build` успешна, **649 тестов без ошибок
-и пропусков**. Host suite содержит 72 теста, включая 36 новых cache-сценариев:
-15 wrapper, 10 writer, 6 store и 5 проверок с настоящим Jetty. Неизменённые задачи
-Gradle переиспользованы. Список сценариев, лимиты и SHA-256 исходников:
-[verification.json](verification.json).
+Первоначальное исправление кэша, commit `5206220`: **649 тестов**, host suite —
+72, включая 36 cache-сценариев. Эта историческая проверка сохранена отдельно в
+[verification.json](verification.json); её числа и SHA-256 относятся к тому commit.
+
+Проверка кода `e8f4bb0`: полная `gradle build` успешна, **665 тестов без ошибок
+и пропусков**, host suite — 88. Добавлены 10 проверок очереди публикации и
+6 end-to-end сценариев: MISS → публикация → следующий HTTP HIT с единственным
+upstream-запросом, независимые raw query, истечение срока, вытеснение, обход кэша
+и обрезанный ответ origin. Неизменённые задачи Gradle переиспользованы.
+Сценарии и версия исходников:
+[integration-verification.json](../../../stress/cache/evidence/e8f4bb0/integration-verification.json).
+
+Длительная нагрузка выполняется отдельно от `gradle build`:
+[запуск и критерии](../../../stress/cache/README.md),
+[результат прогона](../../../stress/cache/evidence/e8f4bb0/RESULTS.md).
+Smoke проверяет стенд; статус десятиминутного прогона определяется его отдельным
+отчётом и не следует из числа пройденных unit/integration tests.
 
 Старая `ServletBodyWriterFactory` из `examples/proxy/streaming` по-прежнему
 выбирает blocking writer для обёртки, перехватывающей output. Исправленная

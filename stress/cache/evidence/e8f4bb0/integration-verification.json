@@ -1,0 +1,150 @@
+{
+  "source_commit": "e8f4bb0c04d744c1f1205b5fb592cafd569dc65f",
+  "library_runtime_commit": "46db2315298eb39bd19595276255db786560a42d",
+  "recorded_at_utc": "2026-10-26T11:51:53.035550+00:00",
+  "historical_baseline": {
+    "source_commit": "5206220a6349a0cb9a47395844cd297decd56713",
+    "total_tests": 649,
+    "host_tests": 72,
+    "report": "../../../../examples/proxy/caching/verification.json"
+  },
+  "normal_build_tasks": {
+    "status": "PASS",
+    "basis": "Every module build task completed before cacheSoak started; all available JUnit XML reports have zero failures, errors and skips.",
+    "tasks": [
+      ":app:build",
+      ":proxy:build",
+      ":command-support:build",
+      ":jetty-proxy:build",
+      ":jetty-proxy-spring:build",
+      ":jetty-client-example:build",
+      ":jetty-proxy-integration-example:build"
+    ],
+    "unchanged_tasks_reused": true
+  },
+  "combined_gradle_invocation": {
+    "tasks": [
+      "build",
+      ":jetty-proxy-integration-example:cacheSoak"
+    ],
+    "status": "PASS",
+    "final_build_successful_banner_observed": true,
+    "command": "gradle build :jetty-proxy-integration-example:cacheSoak -PcacheSoakWarmupSeconds=30 -PcacheSoakSeconds=600 -PcacheSoakClients=20 -PcacheSoakOutput=/tmp/nettypet-cache-soak-e8f4bb0 -PcacheSoakCommit=e8f4bb0c04d744c1f1205b5fb592cafd569dc65f",
+    "log": "run.log"
+  },
+  "total_tests": 665,
+  "host_tests": 88,
+  "additional_tests_since_baseline": 16,
+  "total_cache_tests": 52,
+  "modules": {
+    "app": {
+      "tests": 74,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "proxy": {
+      "tests": 87,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "command-support": {
+      "tests": 84,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-proxy": {
+      "tests": 221,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-proxy-spring": {
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-client-example": {
+      "tests": 104,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-proxy-integration-example": {
+      "tests": 88,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "new_tests": {
+    "dev.example.integrationhost.CachePublicationQueueTest": {
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "timestamp": "2026-10-26T11:50:25.302Z",
+      "scenarios": [
+        "completedSnapshotIsPublishedOffTheCallerThreadAndOnlyAfterWorkerCleanup()",
+        "repeatedCloseAndSubmissionAfterCloseCannotRetainCapture()",
+        "snapshotFailureCompletesExceptionallyAfterCleanupAndWorkerAcceptsTheNextEntry()",
+        "observerFutureCannotCancelOrForgeTheActualPublicationResult()",
+        "shutdownContinuesDiscardingAllQueuedCapturesAfterACleanupFailure()",
+        "uncacheableCompleteResponseIsBypassedWithoutRetainingCapture()",
+        "fullQueueRejectsOnlyTheNewCaptureAndPreservesAlreadyDeliveredBodies()",
+        "failedHttpExchangeBypassesTheWorkerAndImmediatelyReleasesItsReservation()",
+        "shutdownDiscardsQueuedCapturesImmediatelyAndPreventsLateActivePublication()",
+        "racingSubmitAndCloseReleasesEveryQueuedOrRejectedCapture()"
+      ]
+    },
+    "dev.example.integrationhost.CacheEndToEndIntegrationTest": {
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "timestamp": "2026-10-26T11:50:22.697Z",
+      "scenarios": [
+        "expiredEntryTriggersAnotherOriginRequestWithoutWaitingForHousekeeping()",
+        "uncacheableResponseIsDeliveredCorrectlyAndAlwaysReturnsToOrigin()",
+        "evictedEntryIsFetchedAgainAndTheRealStoreStaysWithinItsWeight()",
+        "rawQueryVariantsHaveIndependentMissPublishHitCycles()",
+        "truncatedOriginBodyNeverBecomesAHitOrRetainsACaptureReservation()",
+        "missPublishesEightMebibytesAndNextHttpHitDoesNotContactTheOrigin()"
+      ]
+    }
+  },
+  "source_sha256": {
+    "examples/proxy/caching/CachePublicationQueue.java": "28d080ceabf010392775265f12f1faa0117266ac67c574b59ef42bec4ea0b473",
+    "examples/proxy/caching/CachedResponse.java": "a2a91a39ecb2ef2cde0650a42de524352db66835dfce3510bb43bb40b53b66c4",
+    "examples/proxy/caching/CachedResponseWriter.java": "f2be5864c98411a6a655971d6f5c7ecb5b6275cc4f7345ec8d1d6b96017a2055",
+    "examples/proxy/caching/ContentCachingResponse.java": "a2410acf23ede384803209adaf9524b904c77766e7ad4c83d5b41e54e3e91115",
+    "examples/proxy/caching/SharedResponseCache.java": "ebc8ea03f5cc20ea23f55c76513b7583129a0d8f82a440cea7641e8786d94fd7",
+    "examples/proxy/NettyProxyRequestExecutor.java": "64a4dca9a73851e00f7e9e412f54411f5f572473f599dbd69b670239543706f5",
+    "jetty-proxy-integration-example/src/test/java/dev/example/integrationhost/CacheIntegrationServer.java": "9a538bd34a361d3c0b995c63fad8f7d71ec6aa1054ae0d327293a14a90db94db",
+    "jetty-proxy-integration-example/src/test/java/dev/example/integrationhost/CacheSoakRunner.java": "040a93a7e7332d0fc780dc39b38ebb1343bbc246c0b278847fa252e87d2f4d64",
+    "jetty-proxy-integration-example/src/test/java/dev/example/integrationhost/CachePublicationQueueTest.java": "b37104626fbbe185721944bc915c44da32973935432f705fe57c1a23158747cf",
+    "jetty-proxy-integration-example/src/test/java/dev/example/integrationhost/CacheEndToEndIntegrationTest.java": "4c6175e20f2b1729bcf97a6ef75e154424aae0941b8c154a6384d580e00ed124",
+    "jetty-proxy-integration-example/build.gradle": "a9e0a09c6ed5721827f19d8a156b27075cd5a387fc53789bcf3474614cc1234b",
+    "build.gradle": "d2f904513e8990aa09f6b8f17f0c2437c2272afa58401398cf949f384e4a4717"
+  },
+  "scope": [
+    "Actual examples/proxy/caching/*.java compiled in the test-only legacyCacheFixture.",
+    "Ten new publication queue tests cover bounded admission, rejection, shutdown, late publication prevention, cleanup failures, snapshot failure, observer isolation and submit/close races.",
+    "Six new end-to-end HTTP tests cover MISS/publication/HIT with one origin request, raw-query isolation, expiry, eviction, uncacheable responses and truncated origin bodies.",
+    "Normal build results do not establish the outcome of the separate soak workload.",
+    "Private portal dependencies remain unavailable; NettyProxyRequestExecutor is included in the source manifest but is not compiled as a complete portal.",
+    "Production library runtime remains 46db231; cache helpers and harness are application/test integration code.",
+    "Source hashes were checked against the exact committed blobs; later documentation/evidence changes do not alter these tested sources."
+  ],
+  "soak_evidence": {
+    "report": "report.json",
+    "samples": "samples.csv",
+    "log": "run.log",
+    "interpretation": "RESULTS.md",
+    "status": "PASS; see report.json for all criteria and limitations"
+  },
+  "finalized_at_utc": "2026-10-26T12:01:14.532543+00:00"
+}
