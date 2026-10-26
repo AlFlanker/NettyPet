@@ -7,7 +7,7 @@
 Практическое руководство по исходникам NettyPet. Как запускается приложение,
 кто вызывает каждый этап обмена, как передаются тела и как добавлять заголовки.
 
-**Редакция:** 26 октября 2026 · runtime `e078071` · Java 21 · Boot 4.1.1 · Jetty 12.1.12.
+**Редакция:** 26 октября 2026 · runtime `c2dcfb3` · Java 21 · Boot 4.1.1 · Jetty 12.1.12.
 
 ![Архитектура модуля](diagrams/architecture.svg)
 
@@ -26,7 +26,7 @@
 | [13–15](#page-13) | Запуск, проверка целостности, диагностика |
 
 История первоначального примера: [PR #6](https://github.com/AlFlanker/NettyPet/pull/6).
-Перенос логики: `MIGRATION.md`; проверки текущей адаптации: `INTEGRATION_REVIEW.md`.
+Перенос логики: `MIGRATION.md`; повторный совет и проверки: `COUNCIL_REVIEW.md`.
 Редактируемая версия руководства и команда пересборки PDF находятся рядом с этим файлом в `docs/`.
 
 <!-- pagebreak -->
@@ -45,7 +45,7 @@
 | `JettyProxyFilter` / `ProxyRequestPlanner` | `prepare()` на исходном потоке: plan либо local chain. |
 | `ProxyRequestPlan` / `ProxyExchangeExecutor` | Target, timeout, hooks, body policy; граница выбора транспорта. |
 | `JettyProxyEngine` / `JettyProxyServlet` | `forward()` и вложенный Exchange; Servlet — дополнительный адаптер. |
-| `ProxyCall` / `ProxyExchangeResult` | Cancellation и completion после cleanup без доступа к Servlet. |
+| `ProxyCall` / `ProxyExchangeResult` | Cancellation и completion после cleanup; завершённый handle отсоединён от Exchange. |
 | `ProxyHttpClient` / `InformationalProtocolHandler` | Регистр методов; ожидание финального ответа после `1xx`. |
 | `Downstream` | Native Jetty или Servlet wrappers; `write()`, `flush()`, `cancel()`. |
 | `ResponseContentBuffer` | Streaming `read()`/`demand()` и bounded batching. |
@@ -59,7 +59,7 @@
 - `src/main/resources/application.yml` — параметры и отключение MVC `FormContentFilter`.
 - `src/test/java/dev/example/jettyclient/` — интеграционные проверки и header SPI;
   подкаталог `proxy/` — детерминированные проверки буферов.
-- `README.md` и `MIGRATION.md` — контракт; `INTEGRATION_REVIEW.md` — проверки;
+- `README.md` и `MIGRATION.md` — контракт; `COUNCIL_REVIEW.md` — проверки;
   прежние review/performance файлы сохраняют исторические условия и замеры.
 
 Модуль не зависит от `app`, `proxy` и `command-support`. В нём отсутствуют
@@ -111,13 +111,15 @@ Filter и Servlet-адаптер общего engine не владеют его 
 
 `JettyProxyFilter` вызывает `planner.prepare(request)`: local возвращает `null`,
 proxy — `ProxyRequestPlan` с target, timeout и hooks. `executor.forward()`
-проверяет HTTP, target и async; остановка/заполненный admission дают `503`.
-Фиксируются `ProxyRequestMetadata` и длина тела; body ещё не читается.
+проверяет HTTP, target и async; stop, admission или отсутствие client executor дают `503`.
+Фиксируются request metadata, длина тела и исходные application response headers.
+Ошибка прикладного accessor даёт `500`, owned async завершается; body ещё не читается.
 
 Engine вызывает `startAsync(request, response)`, сохраняя wrappers; адаптер может
 передать уже начатый async той же пары объектов. Exchange попадает в реестр.
 `attachLifecycle()` устанавливает listener и `async.setTimeout(0)` до возврата
-из входного вызова. Deadline контролирует engine; чужой async он не завершает.
+из исходного dispatch. Поздний worker не вызывает `forward()` после его возврата.
+Deadline контролирует engine; чужой async он не завершает.
 
 ### Сериализованный владелец Exchange
 
@@ -255,8 +257,9 @@ wrappers и сокеты; формула `maxConcurrent × chunkBytes` не да
 Opt-in body policy собирает direct slabs до `maxInputBytes`, максимум 65 536.
 Rewriter работает на двух CPU workers с очередью `max-concurrent`; output
 ограничен `maxOutputBytes` и 65 536 сегментами до создания views.
-Borrowed input slices удерживаются до окончания worker и output writes.
-Timeout не может принудительно остановить произвольный Java-код rewriter.
+Queued rewrite при отмене удаляется, не ожидая занятых workers; input освобождается.
+Уже запущенный worker удерживает borrowed slices до возврата и output writes:
+timeout не может принудительно остановить произвольный Java-код.
 Пример и перенос `ByteSplice` без Netty — в `MIGRATION.md`.
 
 Header hooks обязаны быть быстрыми: блокировка владельца задерживает не только
@@ -302,7 +305,12 @@ NTLM/Negotiate дают локальный `501`, включая поля, до�
 Нельзя менять `Host`, `Content-Length`, `Expect`, hop-by-hop поля и описание
 непрозрачного тела: `Content-Type`, `Content-Encoding`, `Content-Range`.
 Поля, перечисленные исходным `Connection`, удаляются и после hooks.
-Повторные `Set-Cookie` добавляются отдельно, сохраняя cookies предыдущих Filters.
+Повторные `Set-Cookie` и `Vary` дополняют поля предыдущих Filters: cookies и
+CORS cache dimensions сохраняются. `Cache-Control` делится с учётом quoted values.
+
+При потенциальном rewrite HEAD/304 не публикуют исходные длину и validators.
+Для GET/HEAD без исходящего Range удаляются не-wildcard `If-None-Match` и
+`If-Modified-Since`; wildcard и write preconditions сохраняются.
 
 Неверное имя, CR/LF, управляющие или не представимые в ISO-8859-1 символы значения,
 защищённая мутация, Exception/AssertionError/LinkageError из hook дают `500` до commit.
@@ -404,7 +412,9 @@ downstream `Connection: close`. Download продолжает доставлят
 
 ### Если часть ответа уже отправлена
 
-`fail()` до commit сбрасывает response и отдаёт пустой локальный error response.
+`fail()` до commit сбрасывает response, восстанавливает исходные application
+headers и отдаёт пустую ошибку: cookies/CORS/security сохраняются, metadata
+прежнего тела очищается, `Cache-Control` становится `no-store`.
 После commit заменить статус уже нельзя: `abortDownstream()` обрывает канал через
 Jetty Servlet channel. Обычный `async.complete()` при обрезанном chunked-теле
 создал бы ложный успешный EOF. Поэтому клиент должен обнаружить незавершённое тело,
@@ -442,6 +452,7 @@ terminal && upstreamDone
 ```
 
 Затем Exchange удаляется из реестра, возвращает permit и завершает `ProxyCall`.
+Handle отсоединяет Exchange: его хранение само по себе не удерживает Servlet.
 Result содержит status/failure, byte counts и elapsed. После commit HTTP status
 сохраняется даже при failure. Callback не читает уже завершённый Servlet.
 
@@ -451,8 +462,8 @@ carry; он **не вызывает старый `Content.Source.fail()`**. Ег
 
 ### Остановка приложения
 
-`JettyProxyEngine.close()` запрещает admission, отменяет обмены и timer. Worker
-queue дренируется: borrowed input нельзя вернуть pool до выхода worker. Затем
+`JettyProxyEngine.close()` запрещает admission, отменяет обмены и timer. Queued
+rewrite удаляется; уже работающий rewriter удерживает input до возврата. Затем
 Spring останавливает HttpClient. `cancel(cause)` отменяет только свой обмен.
 UploadedBytes — прочитанное из Servlet; downloadedBytes — успешные write callbacks.
 Completion hooks быстрые, либо `whenCompleteAsync` на своём bounded executor.
@@ -479,31 +490,31 @@ Completion hooks быстрые, либо `whenCompleteAsync` на своём bo
 | `connect-timeout` | `3s` | Таймаут установки соединения HttpClient |
 | `exchange-timeout` | `60s` | Абсолютный срок обмена, включая очередь и тела |
 | `idle-timeout` | `30s` | Отсутствие сетевого трафика, также при активном обмене |
+| `destination-idle-timeout` | `60s` | Удаление простаивающих пустых destinations клиента |
 
-Destination limits общие, а не на selector. Это другая модель, чем Netty event-loop
-пулы основного приложения. Отдельного таймаута ожидания заголовков здесь нет.
+Destination limits общие, не на selector. Destination TTL удаляет пустые записи
+после закрытия соединений; socket idle timeout сам по себе этого не делает.
+TTL положительный и не задаёт жёсткий предел числа origins.
 Счётчики положительные; длительности должны быть не меньше 1 мс и помещаться
 в миллисекунды `long`; `exchange-timeout` также должен помещаться в наносекунды.
 Переполнение отклоняется при создании properties, до обслуживания запросов.
 
-Upstream default planner допускает base path, но не query/user info/fragment.
-Plan target может содержать query; нужны HTTP(S), host и допустимый port.
-Per-plan timeout положительный (не меньше 1 мс), с проверкой наносекунд long.
+Default upstream допускает base path без query/user info/fragment. Plan target
+может содержать query; нужны HTTP(S), host и port. Per-plan timeout: от 1 мс, наносекунды long.
 
 ### Остальные настройки модуля
 
 `server.address=127.0.0.1`, `server.port=8081`, лимит заголовков `16KB`, server
 compression выключена. `spring.mvc.formcontent.filter.enabled=false` отключает
 глобальный фильтр, который иначе мог прочитать form PUT/PATCH/DELETE до proxy.
-Эта настройка влияет на всё standalone-приложение, включая его MVC-маршруты.
+Локальные MVC form PUT также теряют разбор в параметры; при интеграции разграничьте filters.
 
 ```bash
 "$NETTYPET_GRADLE" :jetty-client-example:bootRun \
   --args='--server.port=8082 --example.proxy.max-concurrent=32'
 ```
 
-Увеличение concurrency не устраняет медленный upstream. Сначала проверьте
-очередь destination, CPU, медленных клиентов и пределы генератора нагрузки.
+Concurrency повышайте после проверки upstream и очередей.
 
 <!-- pagebreak -->
 ## Сборка, запуск и быстрые проверки
@@ -584,20 +595,20 @@ python3 stress/multipart/check_results.py /tmp/multipart-smoke.jtl
 
 ### Проверки после ревью {#что-уже-проверено-для-кода-5d672f6}
 
-Runtime `e078071`: **150 тестов модуля, 395 по проекту**, failures/errors/skips — ноль.
-Проверены Filter/plan, async, completion/cancel, cookies и bounded rewrite.
-`INTEGRATION_REVIEW.md` фиксирует полный build; сборка PDF тесты не повторяет.
+Runtime `c2dcfb3`: **188 тестов модуля, 433 по проекту**, failures/errors/skips — ноль.
+Совет добавил 38 проверок проблемных сценариев; полный build зафиксирован
+в `COUNCIL_REVIEW.md`. Сборка PDF тесты не повторяет.
 
 | Группа проверок | Число | Состав и основные сценарии |
 | --- | ---: | --- |
-| HTTP suites | 66 | Integration 21, Protocol 28, ResponseLimits 3, Rewrite 9, Cookie 1, Planner 4 |
-| Headers / plan | 50 | HeaderCustomization 23, EngineContract 13, PlanLifecycle 11, FilterRouting 3 |
-| Буферы / shutdown | 34 | ContentBuffer 6, Buffered 9, Body 4, Portable 4, Properties 9, QueuedDrain 1, EarlyEOF 1 |
+| HTTP suites | 78 | Raw URI, multipart, protocol, rewrite, metadata, cookies и application headers |
+| Headers / plan | 63 | Headers 23, Engine 13, Lifecycle 11, Routing 3, Preflight 13 |
+| Буферы / shutdown | 47 | Буферы 23, Properties 14, Shutdown 7, Cleanup 3 |
 
 ### GET 8 МиБ: диагностика, а не предел системы
 
-Короткий контроль Servlet до адаптации против Filter/engine runtime `e078071`.
-Оба варианта — Jetty HttpClient, обычный streaming без body policy.
+Исторический контроль Servlet против первой адаптации `e078071`, до совета.
+Он не измеряет runtime `c2dcfb3`. Оба варианта — streaming без body policy.
 
 | Метрика | До адаптации | После |
 | --- | ---: | ---: |
@@ -651,10 +662,11 @@ RSS и число потоков после фаз — снимки, не пре
 
 ### Границы текущего примера
 
-Нет Security, retries, connection-bound auth, CONNECT, WebSocket и HTTP/2 upstream.
+Нет Security, retries, connection-bound auth, CONNECT, WebSocket и HTTP/2.
 Trailers/промежуточные ответы downstream не заявлены; multipart непрозрачен.
 Cache, TLS profiles, Resilience4j, старый synchronous load и HTML/CSS algorithms
-автоматически не перенесены. Integration mapping и toggle seam — `MIGRATION.md`.
+автоматически не перенесены. Range upstream не задаёт ranges преобразованного тела.
+Integration mapping и toggle seam — `MIGRATION.md`.
 
-Исходники: [модуль на GitHub](https://github.com/AlFlanker/NettyPet/tree/e078071782a873d9d46b32c2b80505071f43d31e/jetty-client-example).
+Исходники: [модуль на GitHub](https://github.com/AlFlanker/NettyPet/tree/c2dcfb35a251d8ed110c0b6931175a04fc037dfe/jetty-client-example).
 Для пересборки документа: `python3 jetty-client-example/docs/build_guide.py`.
