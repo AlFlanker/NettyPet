@@ -2,18 +2,18 @@
 
 <a id="page-1"></a>
 
-**Устройство и сопровождение модуля `jetty-client-example`**
+**Библиотеки `jetty-proxy`, Spring adapter и подключение к host**
 
-Практическое руководство по исходникам NettyPet. Как запускается приложение,
-кто вызывает каждый этап обмена, как передаются тела и как добавлять заголовки.
+Практическое руководство по исходникам NettyPet: границы library/demo,
+порядок вызовов, тела, прикладные политики и ограниченный resource loader.
 
-**Редакция:** 26 октября 2026 · runtime `c2dcfb3` · Java 21 · Boot 4.1.1 · Jetty 12.1.12.
+**Редакция:** 26 октября 2026 · runtime `65a1f9e` · Java 21 · Boot 4.1.1 · Jetty 12.1.12.
 
 ![Архитектура модуля](diagrams/architecture.svg)
 
-Встроенный Jetty принимает запрос, Filter готовит план, общий `JettyProxyEngine`
-управляет обменом, а Jetty `HttpClient` обращается к HTTP(S) upstream по HTTP/1.1.
-По умолчанию тела передаются потоком; rewrite включается явно. Spring Security не подключён.
+Host Filter выбирает handler до чтения тела. Core engine передаёт HTTP/1.1 поток,
+bounded fetch обслуживает отдельный loader. Spring adapter включается явно;
+маршруты и server settings находятся только в приложениях. Security и toggle не добавлены.
 
 ### Как читать
 
@@ -26,7 +26,8 @@
 | [13–15](#page-13) | Запуск, проверка целостности, диагностика |
 
 История первоначального примера: [PR #6](https://github.com/AlFlanker/NettyPet/pull/6).
-Перенос логики: `MIGRATION.md`; повторный совет и проверки: `COUNCIL_REVIEW.md`.
+Перенос: `MIGRATION.md`; текущие проверки: `jetty-proxy/IMPLEMENTATION.md`.
+Исходный портал недоступен; host-пример проверяет подключение, не весь портал.
 Редактируемая версия руководства и команда пересборки PDF находятся рядом с этим файлом в `docs/`.
 
 <!-- pagebreak -->
@@ -34,37 +35,34 @@
 
 <a id="page-2"></a>
 
-Все пути на этой странице отсчитываются от `jetty-client-example/`.
-Основной пакет — `src/main/java/dev/example/jettyclient/`; файлы прокси находятся
-в его подкаталоге `proxy/`.
+Пути отсчитываются от корня репозитория. Public package сохранён:
+`dev.example.jettyclient.proxy`. Core и Spring — обычные JAR без main/settings.
 
 | Файл / класс | Роль и основные точки входа |
 | --- | --- |
-| `JettyClientExampleApplication` | `main()` запускает Boot; `LocalController` обслуживает `/local`. |
-| `JettyProxyProperties` / `JettyProxyConfiguration` | Binding `example.proxy`, общий client/engine и Filter registration. |
-| `JettyProxyFilter` / `ProxyRequestPlanner` | `prepare()` на исходном потоке: plan либо local chain. |
-| `ProxyRequestPlan` / `ProxyExchangeExecutor` | Target, timeout, hooks, body policy; граница выбора транспорта. |
-| `JettyProxyEngine` / `JettyProxyServlet` | `forward()` и вложенный Exchange; Servlet — дополнительный адаптер. |
-| `ProxyCall` / `ProxyExchangeResult` | Cancellation и completion после cleanup; завершённый handle отсоединён от Exchange. |
-| `ProxyHttpClient` / `InformationalProtocolHandler` | Регистр методов; ожидание финального ответа после `1xx`. |
-| `Downstream` | Native Jetty или Servlet wrappers; `write()`, `flush()`, `cancel()`. |
-| `ResponseContentBuffer` | Streaming `read()`/`demand()` и bounded batching. |
-| `BufferedResponseContent` / `ProxyResponseBody` | Opt-in direct slabs и borrowed read-only segments. |
-| `ProxyHeaders` / `ProxyHeaderEditor` | Sanitize, auth/Max-Forwards, проверяемое редактирование полей. |
-| `ProxyHeaderCustomizer` / `ProxyResponseBodyPolicy` | Header hooks и выбор ограниченного body rewriter. |
-| `ProxyRequestMetadata` / `ProxyResponseMetadata` | Immutable снимки method/target и заголовков. |
+| Core: `JettyProxyClientFactory`, `ProxyTlsProfile` | Started client, одна TLS identity, trust/hostname проверки. |
+| `JettyProxyProperties` | Plain options, `defaults()` без Spring binding. |
+| `JettyProxyEngine`, `JettyProxyServlet` | Streaming Exchange; необязательный Servlet adapter. |
+| `ProxyRequestPlan`, `ProxyExchangeExecutor` | Target, deadline, header/body/error policies; handoff. |
+| `ProxyCall`, `ProxyExchangeResult` | Отмена и completion после cleanup; handle отсоединяет Exchange. |
+| `ProxyHeaderEditor`, `ProxyHeaderPatch` | Быстрые hooks и immutable patch асинхронной стадии. |
+| `ProxyErrorPolicy`, `ProxyErrorResponse` | Bounded local error до commit. |
+| `policies/LinkRewritePolicy`, `HeaderRewriteCustomizer` | Общие URL/header/HTML rules без Netty ByteBuf. |
+| `ProxyFetchClient`, Request/Result/Options | Отдельный bounded GET, decode и строковый loader. |
+| `Downstream`, `ResponseContentBuffer` | Native/portable I/O, demand и batching. |
+| Spring: `JettyProxyClientConfiguration` | Явный Import, qualified client/engine/fetch, binding. |
+| `JettyProxyFilter` | Generic adapter; регистрации и URL library не создаёт. |
+| Demo: `JettyProxyConfiguration` | Standalone `/proxy` и local MVC. |
+| Host: `HttpProxyFilter`, handlers, loader | Выбор старого/нового transport и отдельная загрузка. |
 
 ### Настройки и доказательства поведения
 
-- `src/main/resources/application.yml` — параметры и отключение MVC `FormContentFilter`.
-- `src/test/java/dev/example/jettyclient/` — интеграционные проверки и header SPI;
-  подкаталог `proxy/` — детерминированные проверки буферов.
-- `README.md` и `MIGRATION.md` — контракт; `COUNCIL_REVIEW.md` — проверки;
-  прежние review/performance файлы сохраняют исторические условия и замеры.
+- `jetty-proxy` и `jetty-proxy-spring` — library source/test и Maven metadata.
+- `jetty-client-example` — demo; `jetty-proxy-integration-example` — отдельный host-proof.
+- README библиотек, `MIGRATION.md` и `IMPLEMENTATION.md` — APIs, подключение и проверки.
 
-Модуль не зависит от `app`, `proxy` и `command-support`. В нём отсутствуют
-RequestProcessor, команды и Resilience4j из основного приложения. Lookup может
-выбрать старый или новый executor до чтения тела; сам feature toggle не реализован.
+Core не зависит от Spring/Netty. Только host-пример подключает старый `proxy`
+для второй реальной ветки. Library не переносит закрытые application services.
 
 <!-- pagebreak -->
 ## Запуск: от main до Filter {#запуск-от-main-до-готового-servlet}
@@ -73,20 +71,20 @@ RequestProcessor, команды и Resilience4j из основного при�
 
 ![Порядок создания компонентов](diagrams/startup.svg)
 
-1. `JettyClientExampleApplication.main()` вызывает `SpringApplication.run()`.
-   `@EnableConfigurationProperties` включает binding `JettyProxyProperties`.
-2. `JettyProxyConfiguration.jettyHttpClient()` создаёт общий `ProxyHttpClient` с
-   `HttpClientTransportOverHTTP(selectors)`, TLS, лимитами и таймаутами.
-3. Метод вызывает `client.start()`, затем очищает декодеры и protocol handlers.
+1. Host явно импортирует `JettyProxyClientConfiguration`; component scan library
+   не активирует её. Boot main и server settings находятся в host/demo.
+2. `JettyProxySpringProperties` связывает `jetty.proxy` и создаёт plain core options.
+   Qualified beans не используют посторонний HttpClient приложения.
+3. `JettyProxyClientFactory` применяет typed TLS profile и запускает shared client;
+   затем очищает декодеры и protocol handlers.
    Это делается **после** start: Jetty устанавливает стандартные обработчики при запуске.
 4. В whitelist возвращаются `ContinueProtocolHandler`, `ProcessingProtocolHandler`,
    `EarlyHintsProtocolHandler` и `InformationalProtocolHandler`. Они позволяют
    дождаться финального ответа после промежуточных `100/102/103` и остальных `1xx`.
-5. `jettyProxyEngine()` получает ordered customizers; engine создаёт admission,
-   реестр обменов, deadline scheduler и bounded rewrite executor.
-6. `jettyProxyFilterRegistration()` регистрирует `/*`, REQUEST и async. Прикладной
-   `ProxyRequestPlanner` bean заменяет default planner для `/proxy` и `/proxy/*`.
-   Совместимый Servlet bean использует общий engine; его registration выключена.
+5. Engine получает ordered hooks, admission/timer/rewrite workers. Отдельный
+   `ProxyFetchClient` делит client, но имеет собственные capacity/decode workers.
+6. Только приложение регистрирует Filter/Servlet. Demo выбирает `/proxy`,
+   host использует свой HttpProxyFilter и handler; library URL не устанавливает.
 
 ### Что настроено в клиенте
 
@@ -95,10 +93,11 @@ Redirect выключен, cookie store пустой, автоматическа
 не подставляются. Заголовки `Cookie` и повторные `Set-Cookie` текущего обмена
 передаются, но cookies не хранятся между пользователями.
 
-HTTPS проверяет доверие сертификату и hostname: `SslContextFactory.Client(false)`
-и endpoint identification `HTTPS`. Режим trust-all не используется.
-При остановке Spring закрывает engine, затем общий клиент через `stop()`.
-Filter и Servlet-адаптер общего engine не владеют его lifecycle.
+HTTPS проверяет сертификат и hostname. `ProxyTlsProfile` задаёт раздельные trust/key
+stores, alias и TLS 1.2/1.3 до start. Key store не заменяет system trust.
+Разные identities требуют отдельных clients.
+Spring закрывает engine/fetch, затем client; Filter им не владеет. Без Spring
+client создаётся той же фабрикой, а lifecycle управляет приложение.
 
 <!-- pagebreak -->
 ## Один запрос: порядок вызовов
@@ -109,8 +108,9 @@ Filter и Servlet-адаптер общего engine не владеют его 
 
 ### Исходный Servlet-поток
 
-`JettyProxyFilter` вызывает `planner.prepare(request)`: local возвращает `null`,
-proxy — `ProxyRequestPlan` с target, timeout и hooks. `executor.forward()`
+Application Filter выполняет local/maintenance/backend/forbidden проверки,
+выбирает один handler. Generic `JettyProxyFilter` использует planner: `null`
+продолжает chain, plan передаётся executor. `forward()`
 проверяет HTTP, target и async; stop, admission или отсутствие client executor дают `503`.
 Фиксируются request metadata, длина тела и исходные application response headers.
 Ошибка прикладного accessor даёт `500`, owned async завершается; body ещё не читается.
@@ -124,20 +124,20 @@ Deadline контролирует engine; чужой async он не завер�
 ### Сериализованный владелец Exchange
 
 `dispatch(exchange::start)` ставит событие в очередь. В `start()` вычисляется
-оставшийся срок, планируется deadline, вызываются request hooks и финальная политика
-после sanitization. Локальный отказ заканчивается до создания `Downstream` и upstream
-`Request`; иначе выбирается запись и создаётся запрос с исходным регистром метода.
+оставшийся срок, планируется deadline; optional request header stage возвращает
+patch. Затем выполняются обычные hooks, patch и sanitize. Локальный отказ
+заканчивается до upstream I/O; иначе создаётся Request с исходным регистром метода.
 Если тело известно по длине или framing, подключаются `StreamingContent`
 и `ReadListener`. `Request.send(this)` запускает обмен, `pumpUpload()` — чтение тела.
 
-`onHeaders()` и `onContentSource()` запускают ответную половину; их события
+`onHeaders()` ожидает optional response stage до commit и demand. Callbacks
 передаются тому же владельцу. Успех или `fail()` завершают async, а
 `finishCleanup()` отдельно ждёт возврата ресурсов перед освобождением admission.
 
 ### Пример маршрутизации
 
-При upstream `http://127.0.0.1:9000/base` запрос `/proxy/a?x=1&x=2` идёт в
-`/base/a?x=1&x=2`; `/proxy` и `/proxy/` — в `/base/`. `/proxying` не проксируется.
+В demo upstream `/base` плюс `/proxy/a?x=1&x=2` даёт `/base/a?x=1&x=2`;
+host отдельно использует `/backend`. Library получает готовый trusted target.
 Принятый контейнером raw path/query сохраняет `%XX` без двойного кодирования.
 Неоднозначный URI контейнер может отклонить ещё до Filter.
 
@@ -188,8 +188,8 @@ EOF продюсера ещё не означает успешную отпра�
 
 ![Чтение ответа и обратное давление](diagrams/download.svg)
 
-`onHeaders()` снимает snapshot финального статуса и полей. Владелец вызывает
-response hooks; обычный streaming сразу устанавливает статус и headers.
+`onHeaders()` снимает snapshot, ожидает optional response header stage и вызывает
+hooks. Обычный streaming затем устанавливает статус и headers.
 Явно выбранный body rewrite задерживает их до готовности output (стр. 7).
 `onContentSource()` передаёт `Content.Source` в `ResponseContentBuffer`.
 `pumpDownload()` работает по модели **read / demand**, без callback на каждый HTTP chunk.
@@ -204,6 +204,8 @@ response hooks; обычный streaming сразу устанавливает �
 
 Transfer-Encoding в metadata ответов HEAD/304 допустим и удаляется при forwarding.
 Для 205 объявленная Content-Length больше нуля отклоняется до commit.
+Link policy просит identity, только если клиент его допускает. При `identity;q=0`
+сохраняются negotiation и passthrough; outbound compressor библиотека не добавляет.
 
 ### Объединение мелких фрагментов
 
@@ -254,21 +256,21 @@ Upload удерживает одну порцию, streaming download — одн
 ограничивает aggregate и lookahead. RSS включает также parser, pool, TLS,
 wrappers и сокеты; формула `maxConcurrent × chunkBytes` не даёт его предел.
 
-Opt-in body policy собирает direct slabs до `maxInputBytes`, максимум 65 536.
-Rewriter работает на двух CPU workers с очередью `max-concurrent`; output
-ограничен `maxOutputBytes` и 65 536 сегментами до создания views.
-Queued rewrite при отмене удаляется, не ожидая занятых workers; input освобождается.
-Уже запущенный worker удерживает borrowed slices до возврата и output writes:
-timeout не может принудительно остановить произвольный Java-код.
-Пример и перенос `ByteSplice` без Netty — в `MIGRATION.md`.
+Opt-in body policy собирает bounded direct slabs, максимум 65 536 сегментов.
+Два rewrite workers и очередь ограничены. Queued task при отмене удаляется;
+running worker удерживает borrowed slices до возврата и output writes.
+Java-код нельзя принудительно остановить. Для UTF-8/single-byte URL rewrite
+неизменённые части остаются срезами; другие charsets имеют bounded String fallback.
 
-Header hooks обязаны быть быстрыми: блокировка владельца задерживает не только
-тело, но и обработку отмены/deadline. Вынести медленный код в новый поток и
-передать туда редактор тоже нельзя — он проверяет поток и закрытое состояние.
+Fetch — отдельный полный ответ: defaults 8 concurrent / 2 decoder workers / 8 queue,
+не streaming semaphore. Wire, decoded и text budgets различаются; heap может
+содержать массивы и String одновременно. Не переносите streaming concurrency128
+на buffered loads без расчёта памяти. Лимиты body не равны точному пределу RSS.
 
-Body policy обходит bodyless, range, encoded и `no-transform` ответы; остальные
-полные статусы выбирает приложение. Новая длина и удаление прежних validators
-контролируются engine. Без policy сохраняется streaming без сборки всего тела.
+Для storage I/O есть async header stages: worker возвращает immutable patch,
+а не editor/Servlet. Быстрые callbacks не блокируют владельца.
+Range/encoded/bodyless/no-transform обходят rewrite; новую длину и validators
+контролирует engine. Без policy тело не накапливается.
 
 <!-- pagebreak -->
 ## Заголовки: порядок и границы расширения
@@ -283,7 +285,7 @@ Body policy обходит bodyless, range, encoded и `no-transform` ответ
 
 В обоих направлениях порядок одинаков: исходные поля очищаются, создаётся
 отдельный `ProxyHeaderEditor`, global hooks идут по `@Order`, затем per-plan
-hooks. Результат замораживается, повторно очищается и применяется. Редактор закрывается в `finally`.
+hooks и optional stage patch. Результат очищается и применяется; editor закрывается.
 Каждый hook вызывается один раз, если обработка дошла до соответствующей фазы.
 После request hooks и очистки `prepareForwarding()` проверяет итоговый Authorization:
 NTLM/Negotiate дают локальный `501`, включая поля, добавленные расширением.
@@ -291,7 +293,8 @@ NTLM/Negotiate дают локальный `501`, включая поля, до�
 `ProxyRequestMetadata` содержит `method`, готовый upstream `target` и глубокий
 неизменяемый снимок исходных headers. Ключи `headers()` — в нижнем регистре;
 `headerValues(name)` ищет без учёта регистра. Response hook получает тот же
-исходный снимок, а не изменённые request hook поля.
+исходный снимок, а не изменённые request hook поля. Async stage получает только
+metadata и возвращает `ProxyHeaderPatch`; его factory быстрая, I/O — на app executor.
 
 | Операция редактора | Поведение |
 | --- | --- |
@@ -322,7 +325,7 @@ API не даёт менять URI, статус, тело или lifecycle. Bea
 
 <a id="page-9"></a>
 
-В пакете `dev.example.jettyclient` создайте Spring-конфигурацию. Ниже полный
+В host после явного Import library создайте Spring-конфигурацию. Ниже полный
 пример: первый bean ставит service header, второй использует его значение.
 Порядок одинаков для запроса и ответа.
 
@@ -412,9 +415,10 @@ downstream `Connection: close`. Download продолжает доставлят
 
 ### Если часть ответа уже отправлена
 
-`fail()` до commit сбрасывает response, восстанавливает исходные application
-headers и отдаёт пустую ошибку: cookies/CORS/security сохраняются, metadata
-прежнего тела очищается, `Cache-Control` становится `no-store`.
+`fail()` до commit восстанавливает application headers; cookies/CORS/security
+сохраняются, metadata тела очищается, cache policy — `no-store`. По умолчанию
+тело пустое. `errorPolicy` может вернуть до 64 КиБ локального текста/status;
+error write имеет watchdog `connect-timeout` после основного deadline.
 После commit заменить статус уже нельзя: `abortDownstream()` обрывает канал через
 Jetty Servlet channel. Обычный `async.complete()` при обрезанном chunked-теле
 создал бы ложный успешный EOF. Поэтому клиент должен обнаружить незавершённое тело,
@@ -465,8 +469,9 @@ carry; он **не вызывает старый `Content.Source.fail()`**. Ег
 `JettyProxyEngine.close()` запрещает admission, отменяет обмены и timer. Queued
 rewrite удаляется; уже работающий rewriter удерживает input до возврата. Затем
 Spring останавливает HttpClient. `cancel(cause)` отменяет только свой обмен.
-UploadedBytes — прочитанное из Servlet; downloadedBytes — успешные write callbacks.
-Completion hooks быстрые, либо `whenCompleteAsync` на своём bounded executor.
+Fetch также отменяет свои loads, не останавливая client. Его blocking facade
+вызывается на application thread, не из I/O/callback. Полные данные и String
+ограничены независимо. Completion hooks быстрые либо `*Async` на app executor.
 Ноль `activeRequests()` не означает физический TCP/TLS close. GET RST до headers
 без нового I/O может обнаружиться только по deadline.
 
@@ -475,12 +480,11 @@ Completion hooks быстрые, либо `whenCompleteAsync` на своём bo
 
 <a id="page-12"></a>
 
-Файл: `src/main/resources/application.yml`. Префикс — **`example.proxy`**;
-настройки основного Netty-прокси с префиксом `proxy` здесь не применяются.
+Binding adapter использует **`jetty.proxy`**; core options plain Java.
+Application YAML есть только у demo/host, library собственных settings не содержит.
 
 | Ключ | Default | Назначение |
 | --- | --- | --- |
-| `upstream` | `http://127.0.0.1:9000` | Адрес default planner; `PROXY_UPSTREAM` переопределяет default |
 | `chunk-bytes` | `65536` | Upload-порция, response buffer клиента и portable scratch; 1024…65536 байт |
 | `max-response-headers-bytes` | `16384` | Положительный лимит upstream parser: headers, trailers и chunk extensions |
 | `max-concurrent` | `128` | Admission и размер rewrite queue; при заполнении `503` |
@@ -491,6 +495,7 @@ Completion hooks быстрые, либо `whenCompleteAsync` на своём bo
 | `exchange-timeout` | `60s` | Абсолютный срок обмена, включая очередь и тела |
 | `idle-timeout` | `30s` | Отсутствие сетевого трафика, также при активном обмене |
 | `destination-idle-timeout` | `60s` | Удаление простаивающих пустых destinations клиента |
+| `fetch.*` | `8 / 2 / 8` | `max-concurrent` / `decoder-threads` / `max-queued` — отдельный buffered budget |
 
 Destination limits общие, не на selector. Destination TTL удаляет пустые записи
 после закрытия соединений; socket idle timeout сам по себе этого не делает.
@@ -499,19 +504,18 @@ TTL положительный и не задаёт жёсткий предел 
 в миллисекунды `long`; `exchange-timeout` также должен помещаться в наносекунды.
 Переполнение отклоняется при создании properties, до обслуживания запросов.
 
-Default upstream допускает base path без query/user info/fragment. Plan target
-может содержать query; нужны HTTP(S), host и port. Per-plan timeout: от 1 мс, наносекунды long.
+Plan target — trusted HTTP(S) URI с host/port и raw query. Per-plan timeout:
+от 1 мс, nanos long. Demo default upstream `127.0.0.1:9000` ничего не включает в library.
 
 ### Остальные настройки модуля
 
-`server.address=127.0.0.1`, `server.port=8081`, лимит заголовков `16KB`, server
-compression выключена. `spring.mvc.formcontent.filter.enabled=false` отключает
-глобальный фильтр, который иначе мог прочитать form PUT/PATCH/DELETE до proxy.
-Локальные MVC form PUT также теряют разбор в параметры; при интеграции разграничьте filters.
+Demo: `127.0.0.1:8081`, headers `16KB`, compression off, FormContentFilter off
+(включая local form PUT). Host `:8082` ставит Filter до form parsing и сохраняет MVC.
+Spring Import не задаёт server port, URL или Filter registration.
 
 ```bash
 "$NETTYPET_GRADLE" :jetty-client-example:bootRun \
-  --args='--server.port=8082 --example.proxy.max-concurrent=32'
+  --args='--server.port=8082 --jetty.proxy.max-concurrent=32'
 ```
 
 Concurrency повышайте после проверки upstream и очередей.
@@ -528,12 +532,14 @@ Concurrency повышайте после проверки upstream и очер�
 ```bash
 # В подготовленной облачной среде; локально: NETTYPET_GRADLE=gradle
 NETTYPET_GRADLE=/workspace/.setup/gradle
-"$NETTYPET_GRADLE" :jetty-client-example:test \
-  :jetty-client-example:bootJar
+"$NETTYPET_GRADLE" :jetty-proxy:build :jetty-proxy-spring:build \
+  :jetty-client-example:bootJar :jetty-proxy-integration-example:build
 
 # Upstream должен быть запущен отдельно.
 PROXY_UPSTREAM=http://127.0.0.1:9000 \
   java -jar jetty-client-example/build/libs/jetty-client-example-1.0.0.jar
+# Отдельный host (вместо demo): собственный Filter, handlers и loader.
+# java -jar jetty-proxy-integration-example/build/libs/jetty-proxy-integration-example-1.0.0.jar
 ```
 
 В другом терминале проверьте локальный маршрут и проксирование. Для второго
@@ -543,6 +549,7 @@ PROXY_UPSTREAM=http://127.0.0.1:9000 \
 curl -i 'http://127.0.0.1:8081/local'
 curl --path-as-is -i \
   'http://127.0.0.1:8081/proxy/a%20b?x=%2F&x=2'
+# Для host на :8082: /backend/a и отдельный /resource?path=%2Fgreeting.
 
 # Замените payload.bin существующим файлом, /upload — маршрутом upstream.
 curl --http1.1 -H 'Expect:' --data-binary @payload.bin \
@@ -595,20 +602,20 @@ python3 stress/multipart/check_results.py /tmp/multipart-smoke.jtl
 
 ### Проверки после ревью {#что-уже-проверено-для-кода-5d672f6}
 
-Runtime `c2dcfb3`: **188 тестов модуля, 433 по проекту**, failures/errors/skips — ноль.
-Совет добавил 38 проверок проблемных сценариев; полный build зафиксирован
-в `COUNCIL_REVIEW.md`. Сборка PDF тесты не повторяет.
+Runtime `65a1f9e`: **553 теста проекта**, из них **308** в Jetty libraries/demo/host;
+failures/errors/skips — ноль. External consumer прошёл Gradle metadata и POM-only.
+Отчёт — `jetty-proxy/IMPLEMENTATION.md`; сборка PDF тесты не повторяет.
 
 | Группа проверок | Число | Состав и основные сценарии |
 | --- | ---: | --- |
-| HTTP suites | 78 | Raw URI, multipart, protocol, rewrite, metadata, cookies и application headers |
-| Headers / plan | 63 | Headers 23, Engine 13, Lifecycle 11, Routing 3, Preflight 13 |
-| Буферы / shutdown | 47 | Буферы 23, Properties 14, Shutdown 7, Cleanup 3 |
+| Core | 176 | Streaming, fetch, TLS, policies и lifecycle |
+| Spring | 4 | Explicit Import, qualifiers, binding и отсутствие auto routes |
+| Demo / host | 104 / 24 | Реальные HTTP handlers, loader и JAR artifacts |
 
 ### GET 8 МиБ: диагностика, а не предел системы
 
 Исторический контроль Servlet против первой адаптации `e078071`, до совета.
-Он не измеряет runtime `c2dcfb3`. Оба варианта — streaming без body policy.
+Он не измеряет новые библиотеки/fetch/policies. Оба варианта — streaming без body policy.
 
 | Метрика | До адаптации | После |
 | --- | ---: | ---: |
@@ -642,19 +649,19 @@ SHA JAR и raw runs: `filter-integration-performance.json`.
 | Задержка событий | `curl -N`, буферизация клиента и промежуточных прокси; batching не ждёт заполнения |
 | Низкий rps | Прогрев, SHA JAR, настройки, JMeter timer, CPU/сеть генератора и upstream |
 
-Для ответа 64 КиБ однобайтовыми chunks исторический короткий контроль с двумя
-клиентами дал 110,8 rps Netty и 130,4 rps Jetty (около 5 секунд).
-Исторический провал Jetty до batching — 4,46 rps за 3,139 секунды.
-Эти короткие прогоны объясняют необходимость batching, но не задают SLA.
-RSS и число потоков после фаз — снимки, не пределы памяти и не доказательство
-меньшего числа потоков; `selectors=2` не означает два потока JVM.
+![Отдельная загрузка ресурса](diagrams/fetch.svg)
+
+`ProxyResourceLoader` host делает отдельный GET, не повторяет исходный POST/PUT.
+`fetchBlocking()` вызывается на application thread; async-цепочке нужен `fetch()`.
+Charset берётся из Content-Type; wire/decode/text budgets заданы отдельно.
+Новый UTF-8 response не копирует старые encoding/framing metadata.
 
 ### Перед изменением архитектуры
 
 - Новый обычный заголовок: bean `ProxyHeaderCustomizer`, порядок и проверка
   повторных значений; тела и lifecycle не затрагивать.
-- Body transformation: выбрать bounded policy, budget и segmented algorithm;
-  проверить large/tiny/slow/cancel, validators и ошибки worker.
+- Body transformation: проверить LinkRewritePolicy или собственный bounded алгоритм,
+  charset fallback, negotiation, validators, large/tiny/slow/cancel.
 - Новый фильтр или Spring Security: проверки до proxy Filter, async и wrappers,
   отсутствие преждевременного чтения тела; для сессий отдельно решить CSRF.
 - Изменение Jetty: проверить upload ByteBuffer position/limit, native writer,
@@ -664,9 +671,9 @@ RSS и число потоков после фаз — снимки, не пре
 
 Нет Security, retries, connection-bound auth, CONNECT, WebSocket и HTTP/2.
 Trailers/промежуточные ответы downstream не заявлены; multipart непрозрачен.
-Cache, TLS profiles, Resilience4j, старый synchronous load и HTML/CSS algorithms
-автоматически не перенесены. Range upstream не задаёт ranges преобразованного тела.
-Integration mapping и toggle seam — `MIGRATION.md`.
+Generic URL policies, TLS profiles и bounded fetch есть в core; application cache,
+SSO/storage, registry и Resilience4j остаются у host. Портал целиком не перенесён.
+Range upstream не задаёт ranges преобразованного тела. Mapping — `MIGRATION.md`.
 
-Исходники: [модуль на GitHub](https://github.com/AlFlanker/NettyPet/tree/c2dcfb35a251d8ed110c0b6931175a04fc037dfe/jetty-client-example).
+Исходники: [репозиторий на GitHub](https://github.com/AlFlanker/NettyPet/tree/65a1f9efcfdc57c134dcdf6894218378674f59ed).
 Для пересборки документа: `python3 jetty-client-example/docs/build_guide.py`.

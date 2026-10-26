@@ -1,60 +1,68 @@
-# Подключение Jetty Client к существующей логике прокси
+# Подключение библиотеки к логике приложения
 
-Точка входа текущего приложения — `examples/proxy/HttpProxyFilter.java`. Новый
-модуль предоставляет Filter, общий streaming engine и настройки одного обмена,
-чтобы бизнес-маршрутизация оставалась перед транспортом. Demo Filter зарегистрирован
-на `/*`, а default planner выбирает `/proxy` и `/proxy/*`, снимает этот префикс
-и добавляет base path из `example.proxy.upstream`. В приложении planner может получить готовый target
-из выбранного backend, без привязки engine к `/proxy`.
+Исходная цепочка из `examples/proxy/` начинается в `HttpProxyFilter.java`.
+Теперь transport находится в обычном [jetty-proxy JAR](../jetty-proxy/README.md),
+а [Spring adapter](../jetty-proxy-spring/README.md) включается явно и не объявляет
+маршруты. Executable demo не является зависимостью host-приложения.
 
-Jetty Client убирает переход Netty pipeline → `ByteBuf` → Jetty writer для передачи
-ответа без изменения тела. Upstream `Content.Chunk` передаётся Jetty с сохранением
-владения до callback записи. При Servlet wrappers используется переносимый
-Servlet I/O: wrappers сохраняются, поэтому такой путь включает копирование порции.
-Полное отсутствие копий и ускорение относительно текущего приложения не заявляются.
+Реальный портал не предоставлен. Поэтому результат — reusable library и
+[собираемая host-проверка](../jetty-proxy-integration-example/README.md) с собственным
+Filter, двумя настоящими transports и отдельным loader. Это не заявление, что все
+закрытые сервисы, SSO, cache и resilience портала уже перенесены.
 
 ## Соответствие существующим классам
 
-| Текущая логика | Подключение нового транспорта |
+| Пример приложения | Подключение |
 | --- | --- |
-| `HttpProxyFilter.shouldServeLocally()` | Оставить перед передачей транспорту; local request продолжает Filter chain |
-| `pageOnMaintenance()` | Выполнить до async и чтения тела |
-| `HttpProxy.proxyRequest()` | Передать выбранному executor prepared plan; для нового пути не создавать второй async |
-| `ProxyRequestExecutorLookup.forRequest()` | Будущая точка выбора старого или нового executor для одного запроса |
-| `NettyProxyRequestExecutor.execute()` | Выбрать backend, проверить forbidden URI и подготовить plan до `forward()` |
-| Backend в attribute/session | Считать в исходном Servlet thread и снять необходимые значения; Spring Security модуль не добавляет |
-| `cutBackendUri()` + `fullBackendUrl()` | Сформировать полный raw target URI в planner |
-| `URIOverride.getTimeout()` / `Backend.getTimeout()` | `ProxyRequestPlan.Builder.timeout()`; отсутствие override оставляет общий `exchange-timeout` |
-| `HeaderProcessor.collectHeaders()` + `PortalHeaderContributor` | Перенести правила в global/per-request `ProxyHeaderCustomizer`; требуемые внешние данные получить заранее |
-| `HeaderProcessor.consumeHeaders()` | Response customizer до commit: cookies, `Location`, cache headers |
-| `ResponseBodyRewriter` / `ByteRewriteChain` | Opt-in `ProxyResponseBodyPolicy` с ограничением входа/выхода и worker; алгоритмы требуют переноса с `ByteBuf` |
-| `RequestCallback`, lifecycle, metrics/tracing | `ProxyCall.completion()` с результатом без обращения к Servlet |
-| `ChannelManager`, `Bootstrap`, Netty transport | Общий Jetty `HttpClient`; соединениями управляет клиент |
-| `HttpProxy.load(path, request)` → `String` | Сохранить старую реализацию до отдельного buffered fetch adapter |
+| `HttpProxyFilter.shouldServeLocally()` / maintenance | Проверки остаются в application Filter до handoff |
+| Backend из attribute/session, forbidden URI | Application resolver готовит immutable маршрут, отказ оформляет до async |
+| `ProxyRequestExecutorLookup` | Выбор handler переносится к application boundary; library не содержит toggle |
+| `HttpProxy.proxyRequest()` | Selected handler вызывает `JettyProxyEngine.forward()` один раз |
+| `NettyProxyRequestExecutor` | Остаётся старой веткой; не вызывается как fallback после начала нового обмена |
+| `cutBackendUri()` / `fullBackendUrl()` | Explicit raw target из выбранной backend-конфигурации |
+| URI override/backend timeout | `ProxyRequestPlan.Builder.timeout()` |
+| `collectHeaders()` / `PortalHeaderContributor` | Подготовленный контекст и обычный request header hook |
+| `consumeHeaders()` / cookie interceptors | Response hook либо async header stage с immutable patch |
+| `ResponseBodyRewriter`, FullLink/Html rules | `LinkRewritePolicy` и `HeaderRewriteCustomizer`; дополнительные правила приложения остаются его кодом |
+| `ResponseOwnership` / competing fallback | Engine один владеет ответом; configurable `ProxyErrorPolicy` до commit |
+| `RequestCallback`, lifecycle/metrics/tracing | Immutable `ProxyExchangeResult` через `ProxyCall.completion()` |
+| `ChannelManager`, Netty pipeline | Shared Jetty `HttpClient` из `JettyProxyClientFactory` |
+| `HttpProxy.load()` → String | Отдельный `ProxyResourceLoader` поверх bounded `ProxyFetchClient` |
 
-Первичная адаптация и baseline-проверки: [INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md).
-Повторный совет пяти экспертов и последующие исправления:
-[COUNCIL_REVIEW.md](COUNCIL_REVIEW.md).
+Исходники `examples/proxy` не включаются в source sets. Library не создаёт
+портальные `Backend`, registry или cache и не требует их классов на classpath.
 
-Исходники `examples/proxy` служат примером приложения и не входят в source sets
-этого модуля. Модуль не объявляет их классы и не переносит зависимости портала.
+## Application Filter и однократный выбор
 
-## Planner и однократный выбор реализации
+Рекомендуемая граница — собственный `HttpProxyFilter`, до чтения тела и async:
 
-`ProxyRequestPlanner.prepare(HttpServletRequest)` выполняется в исходном потоке
-Filter. Он возвращает immutable `ProxyRequestPlan` или `null` для продолжения
-локальной цепочки. Здесь читаются backend attributes, данные сессии, principal,
-request id и настройки маршрута. Planner не должен читать тело: никаких
-`getParameter*()`, `getParts()` и предварительного `getInputStream()`.
+```text
+local request → обычная MVC chain
+maintenance / missing backend / forbidden → локальный ответ приложения
+готовый BackendRoute → один выбранный ProxyRequestHandler
+  ├─ новый handler → JettyProxyEngine
+  └─ старый handler → существующий Netty transport
+```
 
-План содержит target, optional timeout, per-request header customizers и optional
-body policy. Target допускает `http`/`https`, host, допустимый port, raw path и
-query. User info и fragment запрещены. Path/query нужно собирать из raw компонентов:
-`URI.resolve()` с начальным `//` может сменить authority, а конструктор из
-декодированных компонентов повторно кодирует `%`. Адрес выбирается конфигурацией
-backend; прямую передачу клиентского URL в target planner не предполагает.
+Так устроен `jetty-proxy-integration-example`: новая и legacy ветви используют
+реальные transports. По умолчанию выбрана Jetty ветка; legacy подключается отдельной
+startup configuration. Runtime feature toggle не реализован. Для его добавления
+выберите handler один раз до `handle()` и сохраните решение на весь запрос.
+При ошибке нельзя отправлять тот же POST/PUT другим транспортом: часть тела уже
+могла уйти backend. Изменение toggle должно влиять только на новые запросы.
 
-Контракт транспорта:
+Для простого маршрута доступен generic `JettyProxyFilter(executor, planner)`.
+Planner возвращает plan либо `null` для local chain. Но конкретные URLs, порядок
+Filter и maintenance/authorization принадлежат host, не library configuration.
+
+Не вызывайте `getParameter*()`, `getParts()` или предварительное чтение input до
+proxy. Host-пример ставит Filter перед MVC form parsing: проксируемый form PUT
+сохраняет байты, а локальный MVC продолжает получать параметры. Demo глобально
+отключает `FormContentFilter`; эту demo-настройку не нужно переносить в приложение.
+
+## Plan и существующий AsyncContext
+
+Транспортная сигнатура:
 
 ```java
 ProxyCall forward(HttpServletRequest request,
@@ -63,292 +71,157 @@ ProxyCall forward(HttpServletRequest request,
                   ProxyRequestPlan plan);
 ```
 
-`ProxyExchangeExecutor` — общая граница для вызова. `JettyProxyEngine` реализует её,
-а `JettyProxyFilter(executor, planner)` связывает с Servlet Filter. Пример оставляет
-возможность вставить выбор executor на этой границе; feature toggle, property и
-выбор старой реализации не реализованы.
+`target` берётся из доверенной backend-конфигурации. Используйте raw path/query;
+`URI.resolve()` с начальным `//` меняет authority, а сборка из decoded компонентов
+может повторно кодировать `%`. План не читает Servlet позднее: снимите backend,
+frontend URL, user/client/request-id и tracing context на исходном потоке.
 
-Для будущего toggle правило одно: выбрать реализацию **один раз на запрос**, до
-начала передачи тела, затем полностью завершить обмен ею же. Старый adapter может
-вызвать существующий Netty executor, новый — Jetty engine. При ошибке нового пути
-нельзя отправлять тот же POST/PUT старым транспортом: тело уже могло уйти backend.
-Изменение toggle влияет на последующие запросы и не меняет активные обмены.
+`forward()` вызывается на исходном dispatch thread до его возврата. При `supplied
+== null` engine делает `startAsync(request,response)`. Если оставляете старое начало
+async в `HttpProxy`, замените `req.startAsync()` на `req.startAsync(req,resp)` и
+передайте тот же context. Wrappers не разворачиваются. Чужой context отклоняется
+без завершения; новый async поверх уже начатого не создаётся.
 
-`JettyProxyServlet` остаётся дополнительным адаптером и использует тот же engine.
-Servlet, созданный через `(engine, upstream)`, не закрывает общий engine.
-В Spring lifecycle engine принадлежит конфигурации, а `HttpClient` останавливается
-после него. Не создавайте `HttpClient` или engine для каждого запроса.
-При динамической смене backend origins положительный
-`example.proxy.destination-idle-timeout` (по умолчанию `60s`) удаляет пустые
-простаивающие destinations клиента. Socket `idle-timeout` закрывает соединения,
-но сам по себе не ограничивает срок хранения записей назначения. Данный TTL
-не задаёт жёсткий предел числа одновременно известных origins; их выбирает
-доверенная конфигурация приложения.
-
-## Встраивание в текущий async-код
-
-Legacy `HttpProxy.proxyRequest()` уже вызывает `startAsync()`. Можно перенести
-начало async внутрь нового engine: передать `supplied = null`, после чего engine
-вызовет `request.startAsync(request, response)`. Альтернатива для адаптации текущего
-`ProxyRequestExecutor.execute()` — передать существующий `AsyncContext`.
-
-При втором варианте текущую строку `req.startAsync()` нужно заменить на
-`req.startAsync(req, resp)`. Это сохраняет именно те request/response wrappers,
-которые получил Filter. Переданный async должен принадлежать этой паре объектов;
-context другой пары отклоняется и не завершается engine: его lifecycle
-остаётся у первоначального владельца. Начатый async без передачи его в `forward()`
-считается ошибкой интеграции, а не сигналом начинать async повторно.
-Оба варианта `forward()` вызываются на исходном Servlet dispatch thread до его
-возврата. Это позволяет зарегистрировать lifecycle listener до возможного
-завершения и переработки запроса контейнером. Вызов engine из позднего worker
-после возврата dispatch не является поддерживаемым способом передачи владения.
-
-Если accessor прикладной request/response wrapper выбрасывает runtime exception
-при подготовке обмена, engine возвращает однократный результат `500` с причиной;
-валидный supplied async завершается, а admission не остаётся занятым. При
-отсутствующем executor клиента возвращается `503` до запуска нового async.
-Чужой context при этом по-прежнему не завершается: его принадлежность
-проверяется раньше обычных отказов.
-
-Следующий adapter использует только публичные API модуля. Метод `execute()`
-вызывается из собственного Filter или приложения; это не реализация интерфейса
-из пакета портала. Target и request id должны быть подготовлены вызывающей логикой.
+Пример подготовки:
 
 ```java
-import dev.example.jettyclient.proxy.ProxyCall;
-import dev.example.jettyclient.proxy.ProxyExchangeExecutor;
-import dev.example.jettyclient.proxy.ProxyHeaderCustomizer;
-import dev.example.jettyclient.proxy.ProxyHeaderEditor;
-import dev.example.jettyclient.proxy.ProxyRequestMetadata;
-import dev.example.jettyclient.proxy.ProxyRequestPlan;
-import jakarta.servlet.AsyncContext;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import java.net.URI;
-import java.time.Duration;
-
-final class PreparedProxyAdapter {
-    private final ProxyExchangeExecutor executor;
-
-    PreparedProxyAdapter(ProxyExchangeExecutor executor) {
-        this.executor = executor;
-    }
-
-    ProxyCall execute(HttpServletRequest request, HttpServletResponse response,
-                      AsyncContext supplied, URI target, String requestId) {
-        // requestId — уже подготовленный immutable снимок, не обращение к Servlet.
-        var plan = ProxyRequestPlan.builder(target)
-                .timeout(Duration.ofSeconds(15))
-                .customizer(new ProxyHeaderCustomizer() {
-                    @Override
-                    public void customizeRequest(ProxyRequestMetadata metadata,
-                                                 ProxyHeaderEditor headers) {
-                        if (requestId != null) headers.set("X-Request-ID", requestId);
-                    }
-                })
-                .build();
-        return executor.forward(request, response, supplied, plan);
-    }
-}
+var plan = ProxyRequestPlan.builder(target)
+        .timeout(Duration.ofSeconds(15))
+        .customizer(new ProxyHeaderCustomizer() {
+            @Override public void customizeRequest(ProxyRequestMetadata metadata, ProxyHeaderEditor headers) {
+                headers.set("X-Request-ID", preparedRequestId);
+            }
+        })
+        .build();
+ProxyCall call = selectedExecutor.forward(request, response, supplied, plan);
 ```
 
-Для старого `ProxyRequestExecutor` это означает adapter от его аргументов к
-prepared plan и результату. `ProxiedRequestLifecycle` хранит Servlet request;
-его нельзя автоматически переносить в поздний completion callback. Снимите
-backend name, target, request id и tracing context заранее, а метрики завершайте
-по `ProxyExchangeResult`. Синхронный template include через `HttpProxy.load()`
-требует собственного adapter: неблокирующий response streaming не возвращает строку.
+После передачи engine никто не продолжает chain и не пишет competing fallback.
+Настройки timeout положительные, от 1 мс, с проверкой nanos overflow. Legacy `0`
+как бесконечный timeout не переносится буквально.
 
-## Заголовки, cookies и контекст пользователя
+## Header/cookie rules и внешний storage
 
-Глобальные `ProxyHeaderCustomizer` beans выполняются по `@Order`, затем вызываются
-customizers плана в порядке добавления. Они получают редактор отдельной копии
-headers только на время обработки. Callback работает на владельце обмена и не должен обращаться
-к БД/сети, блокироваться или читать Servlet. Не сохраняйте editor для позднего
-использования и не обращайтесь к `SecurityContextHolder`/MDC как к исходному
-Servlet thread: захватывайте необходимые immutable значения в planner.
+Глобальные hooks вызываются по `@Order`, затем per-plan hooks. Editor существует
+только на время вызова. Он защищает Host, framing и metadata непрозрачного тела;
+итоговые поля проходят повторную sanitize с исходными Connection nominations.
+Новые обычные headers не требуют изменения транспортного алгоритма.
 
-Например, backend cookie name/path, frontend prefix, user id и готовые request
-cookies можно захватить в per-request customizer. Для `Location` используйте
-`headers.values("Location")`, подготовленное соответствие frontend/backend URL
-и `set()`/`add()`. Для cookies обрабатывайте отдельные строки `Set-Cookie`,
-а не разделённый запятыми список. `add()` сохраняет все значения; proxy также
-добавляет upstream `Set-Cookie` к cookies, которые выставили предыдущие Filters.
-`Vary` upstream дополняет имеющиеся измерения кеширования приложения, например
-`Origin` и `Access-Control-Request-Headers` из CORS-фильтра. Перед handoff engine
-фиксирует исходные headers ответа. При локальной ошибке до commit после reset
-восстанавливаются именно эти application headers: cookies, CORS и security
-headers сохраняются, upstream metadata повреждённого ответа не восстанавливается.
-Затем локальный ответ с ошибкой очищается от metadata прежнего тела, включая
-encoding, ranges и validators, и получает `Cache-Control: no-store`. Даже если
-приложение заранее выставило публичное кеширование или gzip для успешного ответа,
-эти поля не переносятся на пустое тело ошибки.
-Request-scoped `Basic`/`Bearer` допустимы; `NTLM`/`Negotiate` отклоняются, поскольку
-их идентичность может оставаться на общем upstream соединении.
+`HeaderRewriteCustomizer` даёт общий mapping Origin/Referer/Location по immutable
+backend/frontend bases и просит identity при rewrite, только если клиент его
+допускает. При запрете identity negotiation сохраняется, link policy выбирает
+passthrough; сжатая преобразованная версия требует отдельной host strategy.
+Set-Cookie остаются
+отдельными полями; application cookies и Vary/CORS dimensions сохраняются.
+Cookie domain/path/name, SSO и storage key — правила приложения.
 
-Существующие `CookieInterceptor.cookieFromBackend(req, resp, ...)` нельзя вызвать
-без изменений из нового безопасного API: оно не предоставляет Servlet. Вынесите
-правила преобразования в функцию от immutable контекста и списка cookie strings.
-Если `CookieStorageService` требует внешнего I/O, подготовьте данные до передачи
-engine или организуйте отдельный асинхронный этап вне callbacks. Добавление общего
-`HttpCookieStore` не заменяет серверное хранилище cookies пользователя: store
-намеренно пустой, чтобы данные не смешивались между запросами.
+Нельзя вызвать старый `consumeHeaders(req,resp,...)` с настоящим response из
+callback: он обойдёт coordinator и sanitizer. Перенесите изменения в editor/patch,
+а данные Servlet — в подготовленный immutable контекст.
 
-Фрейминг, hop-by-hop и описание тела контролирует engine. Editor не позволяет
-изменять `Host`, `Content-Length`, `Transfer-Encoding`, `Content-Type`,
-`Content-Encoding`, `Content-Range` и остальные защищённые поля. Новые прикладные
-заголовки добавляются без изменения транспортного алгоритма.
+Для I/O после получения upstream headers есть `responseHeadersAsync`; до отправки
+запроса — `requestHeadersAsync`. Функция возвращает `CompletionStage<ProxyHeaderPatch>`
+быстро, storage работает на bounded executor приложения. Patch применяет только
+безопасные header операции; он не содержит Servlet, editor или network request.
+Deadline включает ожидание stage; после отмены поздний patch не применяется.
 
-## Ограниченное преобразование тела
+Это позволяет адаптировать `ExternalStorageCookieInterceptor`, сохраняя загрузку
+и сохранение cookies вне Jetty callbacks. Сервис хранения, его атомарность и ошибки
+остаются частью приложения. Shared `HttpCookieStore` намеренно пустой и не заменяет
+пользовательское cookie storage.
 
-Без `responseBody()` plan сохраняет прежний streaming путь: ответ не копится
-целиком. Policy выбирает преобразование по `ProxyRequestMetadata` и финальным
-`ProxyResponseMetadata`; возврат `null` сохраняет streaming. Engine разрешает
-его для полного ответа с телом без content coding и range-семантики.
-Policy может выбирать разные статусы, включая `201` и `404`.
-Сжатые ответы, HEAD, частичные ответы и `Cache-Control: no-transform` в запросе
-или ответе сохраняются без преобразования.
-Parser `Cache-Control` разделяет директивы с учётом quoted values:
-например, `no-transform` внутри quoted значения extension directive не запрещает
-rewrite само по себе.
-Прикладная policy сама ограничивает подходящие MIME types и статусы;
-двоичный ответ сам по себе не запрещает явно выбранное преобразование.
+## Header/body link rewriting
 
-HEAD/304 требуют отдельного согласования metadata: длина и validators исходного
-upstream могут не описывать тело, которое вернул бы GET после rewrite. Для
-потенциально преобразуемого ответа engine консервативно удаляет эти metadata,
-включая `Content-Length`, вместо публикации неверной длины/validators. Policy
-может фактически оставить конкретный MIME streaming; такая консервативная
-обработка всё равно допустима. Для потенциально преобразуемых GET/HEAD без
-исходящего `Range` не-wildcard
-`If-None-Match` и `If-Modified-Since` удаляются перед отправкой upstream, чтобы
-получить полное тело. Wildcard `If-None-Match: *` и preconditions записывающих
-методов сохраняются; engine не подменяет прикладные проверки существования и
-конкурентного обновления ресурса.
-
-Исходный `206` и `Content-Range` остаются streaming без rewrite. Это сохраняет
-байты upstream, но не реализует диапазоны преобразованного представления. Если
-клиент должен кешировать и запрашивать ranges именно преобразованного тела,
-приложению нужно отключить `Range`, убрать policy для такого маршрута либо
-разделить URL исходного и преобразованного представлений. Нельзя склеивать ranges
-исходного upstream с ранее преобразованным полным ответом как одну representation.
-
-Для выбранного ответа engine задерживает headers, собирает данные в pooled
-direct slabs с пределом `maxInputBytes` и не более 65 536 компонентов, затем
-выполняет rewriter на ограниченном worker executor: 2 потока, очередь
-`max-concurrent` задач (по умолчанию 128). `maxOutputBytes` ограничивает
-возвращённый результат; output также допускает не больше 65 536 сегментов,
-что проверяется до создания списка views. Эти пределы относятся
-к данным тела; объектная metadata, TLS, parser и пользовательские аллокации
-rewriter потребляют дополнительную память. Слишком большой output не становится
-безопасным только из-за проверки после возврата: сам алгоритм должен соблюдать
-установленный бюджет при создании вставок.
-
-Результат — `ProxyResponseBody`, список read-only срезов `ByteBuffer` с известной
-длиной. `buffers()` возвращает свежие views; движения position не меняют input.
-Возвращать заимствованные срезы input разрешено: engine удерживает память до
-окончания worker и записи output. Новые вставки должны иметь обычную memory
-lifecycle, без собственного pooled cleanup. Не release вход и не сохраняйте
-его срезы для использования после обмена.
-
-Ниже реальный пример opt-in вставки префикса к `text/plain`; он не переписывает
-HTML/CSS и не декодирует весь input в строку:
+Общие правила из example можно подключить без Netty `ByteBuf`:
 
 ```java
-import dev.example.jettyclient.proxy.ProxyResponseBody;
-import dev.example.jettyclient.proxy.ProxyResponseBodyPolicy;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-
-ProxyResponseBodyPolicy prefixText = (request, response) -> {
-    boolean plain = response.headerValues("Content-Type").stream()
-            .anyMatch(value -> value.split(";", 2)[0].trim().equalsIgnoreCase("text/plain"));
-    if (!plain) return null;
-    return new ProxyResponseBodyPolicy.Selection(8L * 1024 * 1024,
-            8L * 1024 * 1024 + 64, (metadata, input) -> {
-                var output = new ArrayList<ByteBuffer>();
-                output.add(ByteBuffer.wrap("proxied: ".getBytes(StandardCharsets.UTF_8)));
-                output.addAll(input.buffers());
-                return ProxyResponseBody.of(output);
-            });
-};
-// В planner: ProxyRequestPlan.builder(target).responseBody(prefixText).build()
+var settings = new LinkRewriteSettings(backendBase, frontendBase,
+        8L * 1024 * 1024, 12L * 1024 * 1024);
+var plan = ProxyRequestPlan.builder(target)
+        .customizer(new HeaderRewriteCustomizer(settings, frontendRequestUri, true))
+        .responseBody(new LinkRewritePolicy(settings))
+        .build();
 ```
 
-Для переноса `ByteRewriteChain` используйте тот же принцип, что в текущих
-`ByteSplice`: неизменённые участки остаются срезами исходных сегментов, замены
-становятся отдельными вставками. Нужно перенести поиск и сборку с Netty `ByteBuf`
-на сегменты `ByteBuffer`; готовые HTML/CSS/link algorithms сюда не скопированы.
-Текущий модуль не зависит от Netty. При преобразовании engine устанавливает новую
-длину и удаляет прежние `ETag`, `Content-MD5`, `Digest`, `Content-Digest`,
-`Repr-Digest`, `Last-Modified` и `Accept-Ranges`; rewriter возвращает только тело.
-Согласование cache, charset и конкретных правил изменения ссылок остаётся частью
-алгоритма и настроек приложения.
+Link policy обрабатывает literal backend-base ссылки в текстовых ответах и
+конкретные HTML href/base/form rules legacy. Это не полноценный HTML/CSS parser;
+регистр и unusual form-action правила сохранены намеренно. Собственные rewriters
+и изменения бизнес-семантики нужно подключить и проверить отдельно.
 
-Rewriter выполняет ограниченную CPU-работу, не сетевые вызовы и не бесконечный
-цикл. При timeout/cancellation queued-задача удаляется из очереди без запуска
-rewriter; её input освобождается, не дожидаясь других занятых workers. Если
-worker уже начал преобразование, произвольный Java-код нельзя принудительно
-прервать: input остаётся удержанным до его выхода, даже если клиент уже получил
-ошибку. Заполненная очередь не превращается в неограниченное накопление задач.
+Без body policy ответ streaming. В выбранной ветке headers задерживаются, input
+собирается в bounded direct slabs, CPU-преобразование идёт на ограниченном worker.
+Output может заимствовать read-only input slices; новые вставки не требуют pooled
+cleanup. UTF-8/ASCII-compatible single-byte charsets используют этот byte path;
+для других charsets есть bounded String fallback с полными heap-копиями.
 
-## Завершение, ошибки и остающиеся задачи интеграции
+Max input/output и 65 536 segments ограничивают полезные данные, не всю память JVM.
+Queued rewrite при cancellation удаляется; уже начавший worker держит input до
+возврата. Произвольный пользовательский Java-код нельзя принудительно остановить.
 
-`ProxyCall.completion()` публикует `ProxyExchangeResult`: status, failure,
-uploadedBytes, downloadedBytes, elapsed и `success()`. HTTP `404` backend может
-успешно передаться (`success() == true`); транспортная ошибка после `200` headers
-сохраняет `status == 200` и даёт failure. UploadedBytes — прочитанное из Servlet,
-без гарантии доставки backend; downloadedBytes — успешно завершённые записи
-downstream. Completion выполняется после возврата принадлежащих обмену буферов,
-а не как обещание физического закрытия TCP/TLS-сокета. Servlet уже мог быть
-переработан контейнером — callback не читает request/response и не пишет ответ.
-Обработчик должен быть лёгким; для более дорогих метрик используйте
-`whenCompleteAsync(..., applicationBoundedExecutor)` со своим ограниченным executor.
-Завершённый `ProxyCall` отсоединяет Exchange, поэтому хранение handle для метрик
-само по себе не удерживает request/response и буферы обмена. Прикладные callbacks
-и exception objects остаются обычными Java-объектами: не захватывайте в них Servlet.
+Сжатые/bodyless/range/no-transform ответы обходят преобразование. При rewrite
+меняются длина и validators; потенциальные HEAD/304 не публикуют исходные metadata.
+Для GET/HEAD без effective outgoing Range origin-specific conditional validators
+удаляются; wildcard `If-None-Match: *` и write preconditions сохраняются.
+`206` остаётся upstream representation: ranges преобразованного тела не реализованы.
+При строгом согласовании Range отключайте его, не включайте policy или разделяйте URL.
 
-`cancel(cause)` отменяет только этот обмен и безопасен после его завершения.
-Deadline включает очередь, upload, получение ответа, ожидание worker и download.
-Per-plan timeout положительный, не меньше 1 мс и помещается в наносекундный `long`.
-Значение `0`, которое legacy использует как отключённый timeout, переносить
-буквально нельзя: выберите общий или явный положительный предел.
+## Ошибки и completion
 
-| Событие до commit | Новый ответ |
-| --- | --- |
-| Upstream/network/protocol failure | `502` |
-| Общий deadline | `504` |
-| Заполнен admission/worker queue, остановка, cancellation | `503` |
-| Ошибка прикладного header/body расширения | `500` |
-| Runtime exception при подготовке Servlet wrapper | `500` с исходной причиной в результате |
+По умолчанию до commit network/protocol failure даёт `502`, основной deadline —
+`504`, overload/stop/cancellation — `503`, application policy failure — `500`.
+`errorPolicy()` может вернуть `ProxyErrorResponse` с нужным статусом и текстом,
+например для сохранения legacy `408/500`. Тело ограничено 64 КиБ; callback быстрый
+и не пишет Servlet. Error write ограничен отдельным watchdog `connect-timeout`,
+поэтому после основного deadline допускается этот дополнительный срок дописывания.
+Preflight rejections остаются пустыми, а после commit ответ можно только оборвать.
 
-Legacy `ProxyCommand` оформляет общий сбой как `500`, timeout/bulkhead как `408`
-с текстом ошибки. Эти статусы и fallback body автоматически не перенесены.
-После commit engine обрывает повреждённый ответ вместо записи успешного EOF;
-заменить уже отправленный HTTP status невозможно. Без нового I/O reset GET до
-первых headers может обнаружиться только по deadline.
+До commit application cookies/CORS/security headers восстанавливаются из снимка.
+Body metadata очищается, ошибки получают `no-store`. Broken wrappers и плохая
+подготовка не должны оставлять async timeout=0 навсегда; owned context завершается
+или его канал обрывается. Исходная причина доступна в результате.
 
-Перед включением в приложение остаётся согласовать собственные response cache,
-Resilience4j/circuit breaker, maintenance/error views, профили TLS backend,
-обновление backend конфигурации и маршрутов, Spring Security/сессии и правила
-HTML/CSS rewriting. Точки подключения транспорта и bounded body policy готовы,
-но эти бизнес-механизмы модуль самостоятельно не включает. Multipart должен
-доходить исходным потоком: прежняя пересборка уже разобранных form parameters
-не является частью нового пути.
+`ProxyCall.completion()` публикуется после engine cleanup; status описывает
+переданный HTTP-код, failure — сбой доставки тела. UploadedBytes — прочитанное из
+Servlet, downloadedBytes — успешные write callbacks. Handle отсоединяет Exchange.
+Не вызывайте старый lifecycle с сохранённым Servlet после его recycle: подготовьте
+immutable данные метрик/tracing, используйте быстрый callback либо `*Async`.
 
-В demo глобально отключён MVC `FormContentFilter`. Поэтому локальные
-PUT/PATCH/DELETE с form-urlencoded телом также не получают его разбора в
-`@RequestParam`. При переносе в приложение настройте порядок или область
-действия body-reading filters: локальные формы должны сохранить привычную
-обработку, а проксируемый запрос — попасть в engine до чтения параметров/parts.
+## Отдельный loader вместо повторной отправки исходного запроса
 
-Замеры [strict-review-performance.json](strict-review-performance.json) относятся
-к предыдущей версии Servlet до этой адаптации. Их нельзя использовать как
-сравнение нового пути с реальным приложением и его обработкой cookies/ссылок.
-[Короткий контроль первой адаптации](filter-integration-performance.json) сравнивает Servlet
-и Filter/engine: 159,96 → 176,83 rps для GET 8 МиБ, 6521 запрос с прогревом
-без HTTP/size/SHA ошибок. По два коротких прогона на вариант при общем CPU
-с генератором/upstream не доказывают устойчивое ускорение или production capacity.
-Этот baseline предшествует исправлениям повторного совета; их проверки и
-актуальные ограничения указаны в [COUNCIL_REVIEW.md](COUNCIL_REVIEW.md).
+Для `HttpProxy.load(path,...)` есть bounded fetch, но application-facing facade
+должен быть отдельным от HTTP proxy handler. В host-примере это
+`ProxyResourceLoader` / `JettyResourceLoader`.
+
+Loader строит trusted target из переданного resource path и делает отдельный GET.
+Он не копирует исходный POST/PUT body. Используются явные prepared headers и
+wire/decoded/text budgets. Charset берётся из Content-Type; gzip/deflate decode
+включается явно. Полученная строка создаёт heap-копию; старые Content-Length,
+Content-Encoding и digests нельзя переносить в новый UTF-8 response.
+
+Синхронный `fetchBlocking()` выполняется на вызывающем application/Servlet thread,
+не на Jetty I/O или владельце Exchange. Async цепочке нужен `fetch()` и
+`ProxyFetchCall`. Ошибки HTTP остаются ответами; cancellation/deadline/лимиты —
+exceptional completion. Interrupt caller отменяет его загрузку.
+
+Fetch capacity отдельная: defaults 8 concurrent / 2 decode workers / 8 queue.
+Spring binding — `jetty.proxy.fetch`; его concurrency/queue ограничиваются также
+transport maxConcurrent, но semaphore со streaming не разделяется. Полные тела,
+декодирование и строка требуют большего budget, чем один streaming chunk.
+
+## Профили TLS и оставшаяся логика приложения
+
+`ProxyTlsProfile` задаёт trust/key stores, alias и протоколы до client start.
+Default сохраняет проверку сертификата и hostname. Одна TLS identity соответствует
+одному shared client; разные identities и ротация требуют отдельных qualified
+clients/engines и версии конфигурации в application key.
+
+Library не добавляет Security/CSRF, response cache, registry, maintenance views,
+Resilience4j или retries. Эти механизмы сохраняются в host вокруг выбранного handler.
+Feature toggle остаётся будущим selector на этой границе. Не создавайте client
+на каждый запрос и не меняйте SSL identity активного client.
+
+Текущие проверки и границы: [IMPLEMENTATION.md](../jetty-proxy/IMPLEMENTATION.md).
+Отчёты [INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md) и
+[COUNCIL_REVIEW.md](COUNCIL_REVIEW.md) фиксируют предыдущую standalone структуру.
+Замер `filter-integration-performance.json` также исторический (`e078071`),
+до новых библиотек, loader и policies; он не измеряет производительность портала.

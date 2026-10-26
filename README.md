@@ -45,11 +45,22 @@ Raw query и существующие `%XX`-последовательности
 | `app` | Spring Boot, Jetty, MVC, фильтр, композиция команд и прокси, настройки и Processor beans | `app/build/libs/app-1.0.0.jar` — исполняемое приложение |
 | `proxy` | `ProxyEngine`, SPI, Netty, async Servlet I/O, обратное давление и пулы | `proxy/build/libs/proxy-1.0.0.jar` — обычная библиотека |
 | `command-support` | Reactor Command API, ресурсный lifecycle, TimeLimiter, Bulkhead, CircuitBreaker и opt-in Retry | `command-support/build/libs/command-support-1.0.0.jar` — библиотека приложения |
-| `jetty-client-example` | Самостоятельный пример Servlet + Jetty HttpClient без Netty и Spring Security | `jetty-client-example/build/libs/jetty-client-example-1.0.0.jar` — отдельное приложение |
+| `jetty-proxy` | Подключаемый Servlet async proxy, bounded fetch, TLS и политики преобразования на Jetty HttpClient | `jetty-proxy/build/libs/jetty-proxy-1.0.0.jar` — обычная библиотека |
+| `jetty-proxy-spring` | Явное подключение транспортных beans и binding `jetty.proxy.*`, без регистрации маршрутов | `jetty-proxy-spring/build/libs/jetty-proxy-spring-1.0.0.jar` — необязательная библиотека |
+| `jetty-client-example` | Самостоятельный пример использования Jetty-библиотек без Netty и Spring Security | `jetty-client-example/build/libs/jetty-client-example-1.0.0.jar` — отдельное приложение |
+| `jetty-proxy-integration-example` | Host-пример с общим `HttpProxyFilter`, Jetty/Netty обработчиками и отдельной загрузкой ресурсов | `jetty-proxy-integration-example/build/libs/jetty-proxy-integration-example-1.0.0.jar` — отдельное приложение |
 
 [`jetty-client-example`](jetty-client-example/README.md) запускается отдельно на порту `8081`.
 В нём показана потоковая передача GET и POST/PUT через Jetty HttpClient;
 описаны команды запуска, проверки multipart и границы примера.
+
+Для подключения Jetty-варианта к своему проекту используйте
+[`jetty-proxy`](jetty-proxy/README.md) и при необходимости
+[`jetty-proxy-spring`](jetty-proxy-spring/README.md).
+[`jetty-proxy-integration-example`](jetty-proxy-integration-example/README.md) показывает
+выбор обработчика в принадлежащем приложению `HttpProxyFilter`, до чтения тела и
+`startAsync()`. Обе библиотеки выпускают обычные JAR и Maven metadata; исполняемый
+demo JAR потребителю не нужен. Feature toggle и Spring Security не реализованы.
 
 `app` зависит от `proxy` и `command-support`. Между транспортом и библиотекой команд нет зависимости: стык находится только в `app`.
 Модуль `proxy` не зависит от Spring Boot или Jetty. Его код использует Netty,
