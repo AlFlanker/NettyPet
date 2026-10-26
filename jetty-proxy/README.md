@@ -41,6 +41,8 @@ dependencies: используйте Gradle/Maven metadata и Servlet API сво
 
 Координаты — `dev.example:jetty-proxy:1.0.0`, repository — `build/repository`.
 Это локальная публикация для проверки, не публикация в Maven Central.
+В Maven POM Servlet API имеет scope `provided`; в Gradle runtime dependencies
+его также нет. Принимающее приложение явно предоставляет совместимый Servlet API.
 
 ## Жизненный цикл и точка входа
 
@@ -52,6 +54,22 @@ var client = JettyProxyClientFactory.createStarted(properties);
 var proxy = new JettyProxyEngine(client, properties);
 var fetch = new ProxyFetchClient(client, properties);
 ```
+
+Engine и fetch принимают только клиента, созданного `JettyProxyClientFactory`:
+обычный `new HttpClient()` не сохраняет регистр extension HTTP methods.
+Неподдерживаемый клиент отклоняется конструктором до создания workers.
+Для настройки executor, имени и сетевых параметров используйте callback до start:
+
+```java
+var client = JettyProxyClientFactory.createStarted(properties, tlsProfile, configured -> {
+    configured.setName("portal-backend-v2");
+});
+```
+
+Callback вызывается один раз и не должен запускать/останавливать client. После него
+фабрика восстанавливает обязательные proxy controls: TLS profile, проверку hostname,
+отключение shared cookies, автоматических auth/redirect/decode и ограничения metadata.
+При исключении callback или нарушении lifecycle фабрика освобождает свой client.
 
 При shutdown закройте `proxy` и `fetch`, затем вызовите `client.stop()`.
 Оба компонента отменяют свои обмены, но не останавливают переданный shared client.
@@ -135,9 +153,23 @@ var urls = new LinkRewriteSettings(backendBase, frontendBase,
         8L * 1024 * 1024, 12L * 1024 * 1024);
 var plan = ProxyRequestPlan.builder(target)
         .customizer(new HeaderRewriteCustomizer(urls, frontendRequestUri, true))
-        .responseBody(new LinkRewritePolicy(urls))
+        .responseBody(LinkRewritePolicy.legacyCompatible(urls))
         .build();
 ```
+
+`legacyCompatible(urls)` явно включает selector из `examples/proxy`: `.css` и
+`.wcs` в raw path выбранного target распознаются без учёта регистра, после удаления
+суффикса от первого `;`; query не участвует и `%XX` не декодируются. Такие ресурсы
+и MIME subtype `css` обрабатываются даже без `Content-Type` или при
+`application/octet-stream`. Остальные ответы выбираются только как `text/html`,
+с прежними case-sensitive исключениями `.png`, `.jpg`, `.woff`, `.ttf`, `.jpeg`,
+`.gif` в пути. CSS/WCS проверяются раньше этих исключений. Это opt-in доверие
+прикладному имени ресурса; фактические MIME и charset ответа не подменяются.
+
+Без этого режима `new LinkRewritePolicy(urls)` сохраняет безопасный MIME selector
+HTML/CSS/JavaScript: неизвестные и binary MIME остаются streaming даже у `.css` URL.
+JavaScript MIME без CSS/WCS path выбирается этим default selector; точный legacy
+selector его пропускает, как прежний `isBinaryResponse()`.
 
 `HeaderRewriteCustomizer` сопоставляет `Origin`, `Referer`, `Location` и просит
 `Accept-Encoding: identity` для rewrite, если клиент допускает identity.
@@ -146,13 +178,27 @@ negotiation сохраняется, link policy выбирает passthrough. Д
 нужно сжатое преобразованное тело, требуется outbound compression strategy host.
 Cookie domain/path/SSO остаются правилами
 приложения. `LinkRewritePolicy` переносит общие literal/full-link и HTML href/base/
-form правила из example; CSS/JS используют literal mapping backend base.
+form правила из example; остальные выбранные текстовые ресурсы используют literal
+mapping backend base, сохраняя свои MIME и charset.
 Это сохранение конкретных legacy правил с учётом регистра, а не HTML/CSS parser.
 Правила форм и нестандартные случаи нужно проверить на собственных страницах.
 
 Выбранное тело накапливается в direct slabs с `maxInputBytes`; output ограничен
 `maxOutputBytes` и 65 536 сегментами. Worker executor ограничен; queued rewrite
 при отмене удаляется, running worker удерживает input до своего возврата.
+Готовые соседние малые output-сегменты объединяются в порции до `chunkBytes`;
+крупные срезы остаются borrowed. Дополнительный pooled buffer освобождается только
+после write callback, включая отмену или ошибку.
+
+Отдельный `ProxyRewriteOptions(workers, maxQueued, maxBufferedBytes)` имеет defaults
+**2 / 8 / 128 МиБ**. Его можно передать четвёртым аргументом `JettyProxyEngine`.
+До накопления каждого выбранного ответа engine резервирует
+`maxInputBytes + maxOutputBytes + chunkBytes`; это консервативные declared limits,
+даже если фактический ответ меньше. При нехватке бюджета или переполнении очереди
+возвращается `503`; обычный streaming этот бюджет не расходует. Резерв удерживается
+до завершения worker, записей и освобождения input. `reservedRewriteBytes()` и
+`availableRewriteBytes()` показывают резерв, а не измеренный объём памяти.
+
 UTF-8 и ASCII-compatible single-byte charsets используют срезы неизменённых
 данных и отдельные вставки. Другие charsets, например UTF-16, используют явно
 ограниченный String fallback с полными heap-копиями. Лимиты полезных данных не
@@ -184,14 +230,22 @@ String text = resource.bodyAsString(StandardCharsets.UTF_8);
 По умолчанию fetch делает отдельный GET с пустым телом. Передавайте только явно
 подготовленные headers и доверенный target. Async-вариант — `fetch.fetch(request)`:
 его `ProxyFetchCall` имеет `completion()` и `cancel(cause)`. HTTP ошибки остаются
-обычными результатами; transport failure, deadline, cancellation и лимиты дают
-exceptional completion. Interrupt blocking caller отменяет только его загрузку.
+обычными результатами; transport failure, deadline, cancellation, wire limit и
+ошибки/лимит включённого Content-Encoding decoding дают exceptional completion.
+Interrupt blocking caller отменяет только его загрузку.
 
 Wire body, gzip/deflate decoded body и строка имеют отдельные пределы. Декодирование
 Content-Encoding включается явно; charset берётся из Content-Type, иначе используется
 переданный fallback (по умолчанию UTF-8). Body результата — самостоятельная heap-
 память; строковое представление создаёт дополнительную копию. Не копируйте старые
 Content-Encoding/Length/digests в новый ответ, повторно закодированный как UTF-8.
+Charset и `maxTextCharacters` проверяются лениво в `bodyAsString()`: уже успешный
+fetch может затем дать `IOException` при неизвестном charset или превышении числа
+символов. Это не меняет завершённый `completion()`. Метрика строкового loader должна
+охватывать и fetch, и преобразование в строку, фиксируя успех после обоих шагов.
+`activeRequests()` учитывает владение transport/pooled input, а не сохранённые
+результаты. Бюджет retained results, строк и кэша задаёт приложение отдельно от
+лимита одновременных fetch.
 
 `fetchBlocking` допустим на вызывающем application/Servlet thread, но не на Jetty
 I/O, callback или владельце обмена. Для асинхронной цепочки используйте `fetch()`.
@@ -231,3 +285,5 @@ CSRF, backend registry, maintenance, SSO/storage и response cache остают�
 Повторная оценка сценариев, интеграции и производительности:
 [USAGE_REVIEW.md](USAGE_REVIEW.md). В отчёте зафиксированы обнаруженные ошибки
 cleanup и интеграции, ограничения rewrite и новые измерения текущих артефактов.
+Исправления этих замечаний и актуальные результаты проверки:
+[FIXES.md](FIXES.md), [fix-verification.json](fix-verification.json).

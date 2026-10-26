@@ -51,6 +51,12 @@ startup configuration. Runtime feature toggle не реализован. Для 
 При ошибке нельзя отправлять тот же POST/PUT другим транспортом: часть тела уже
 могла уйти backend. Изменение toggle должно влиять только на новые запросы.
 
+Демонстрационный `LegacyProxyHandler` имеет fixed backend и timeout своего Netty
+engine. Другой выбранный target или deadline он отклоняет `501` с
+`X-Proxy-Capability: fixed-backend-and-timeout-only` до handoff. Новый Jetty handler
+принимает настройки конкретного маршрута; перенос legacy adapter требует явной
+реализации таких возможностей.
+
 Для простого маршрута доступен generic `JettyProxyFilter(executor, planner)`.
 Planner возвращает plan либо `null` для local chain. Но конкретные URLs, порядок
 Filter и maintenance/authorization принадлежат host, не library configuration.
@@ -59,6 +65,34 @@ Filter и maintenance/authorization принадлежат host, не library co
 proxy. Host-пример ставит Filter перед MVC form parsing: проксируемый form PUT
 сохраняет байты, а локальный MVC продолжает получать параметры. Demo глобально
 отключает `FormContentFilter`; эту demo-настройку не нужно переносить в приложение.
+
+## Общий client и настройка перед start
+
+Engine и bounded fetch требуют factory-owned `HttpClient`. Его создают один раз
+для TLS profile через `JettyProxyClientFactory`; lifecycle принадлежит приложению.
+Для собственной конфигурации до start есть overload с `Consumer<HttpClient>`:
+
+```java
+var properties = JettyProxyProperties.defaults();
+var client = JettyProxyClientFactory.createStarted(properties,
+        ProxyTlsProfile.systemTrust(), upstream -> upstream.setName("portal-proxy"));
+var engine = new JettyProxyEngine(client, properties, List.of(),
+        new ProxyRewriteOptions(2, 8, 128L * 1024 * 1024));
+```
+
+В Spring adapter этот же pre-start этап задаётся optional именованным bean:
+
+```java
+@Bean("jettyProxyHttpClientCustomizer")
+Consumer<HttpClient> proxyClientCustomizer() {
+    return upstream -> upstream.setName("portal-proxy");
+}
+```
+
+Customizer завершает настройку до запуска; обычные per-request headers меняются
+через отдельные hooks. Библиотека устанавливает обязательный proxy-контракт:
+empty cookie store, без redirect/автоматического auth/декодирования. При shutdown
+сначала закрываются engine/fetch, затем останавливается общий client.
 
 ## Plan и существующий AsyncContext
 
@@ -139,11 +173,24 @@ var settings = new LinkRewriteSettings(backendBase, frontendBase,
         8L * 1024 * 1024, 12L * 1024 * 1024);
 var plan = ProxyRequestPlan.builder(target)
         .customizer(new HeaderRewriteCustomizer(settings, frontendRequestUri, true))
-        .responseBody(new LinkRewritePolicy(settings))
+        .responseBody(LinkRewritePolicy.legacyCompatible(settings))
         .build();
 ```
 
-Link policy обрабатывает literal backend-base ссылки в текстовых ответах и
+Для точного selector портала используйте `legacyCompatible(settings)`: raw target
+path до первого `;`, без query и декодирования `%XX`, распознаёт `.css`/`.wcs`
+без учёта регистра даже при отсутствующем или binary MIME. MIME subtype `css`
+также выбирается; остальные ответы выбираются как `text/html`, кроме прежних
+case-sensitive image/font исключений `.png`, `.jpg`, `.woff`, `.ttf`, `.jpeg`,
+`.gif` в пути. CSS/WCS имеют приоритет. Реальные `Content-Type` и charset
+сохраняются: например, WCS с octet-stream выполняет literal URL mapping,
+а не получает выдуманный `text/css`.
+
+`new LinkRewritePolicy(settings)` оставляет отдельный безопасный MIME selector
+HTML/CSS/JavaScript. В точном legacy selector JavaScript MIME сам по себе не
+выбирается: прежний `isBinaryResponse()` тоже его пропускал.
+
+Link policy обрабатывает literal backend-base ссылки в выбранных ответах и
 конкретные HTML href/base/form rules legacy. Это не полноценный HTML/CSS parser;
 регистр и unusual form-action правила сохранены намеренно. Собственные rewriters
 и изменения бизнес-семантики нужно подключить и проверить отдельно.
@@ -154,6 +201,18 @@ Output может заимствовать read-only input slices; новые в
 cleanup. UTF-8/ASCII-compatible single-byte charsets используют этот byte path;
 для других charsets есть bounded String fallback с полными heap-копиями.
 
+Engine имеет отдельный `ProxyRewriteOptions`: defaults 2 workers / 8 queued tasks /
+128 МиБ. Spring binding — `jetty.proxy.rewrite.workers`, `max-queued`,
+`max-buffered-bytes`; workers/queue дополнительно ограничиваются admission.
+До создания collector резервируется сумма объявленных `maxInputBytes +
+maxOutputBytes + chunkBytes`; overflow или нехватка бюджета дают `503`.
+Резерв возвращается однократно после worker/write cleanup, включая отмену.
+Это консервативная reservation, а не сумма уже полученных байтов: при лимитах
+8 + 12 МиБ и chunk 64 КиБ один выбранный обмен резервирует 20,0625 МиБ.
+
+Мелкие соседние готовые output spans меньше 1024 байт объединяются максимум до
+`chunkBytes` и 1024 spans за запись. Одинокий маленький span и исходно крупный span
+с его хвостом остаются borrowed; scratch удерживается только до write callback.
 Max input/output и 65 536 segments ограничивают полезные данные, не всю память JVM.
 Queued rewrite при cancellation удаляется; уже начавший worker держит input до
 возврата. Произвольный пользовательский Java-код нельзя принудительно остановить.
@@ -198,6 +257,14 @@ wire/decoded/text budgets. Charset берётся из Content-Type; gzip/deflat
 включается явно. Полученная строка создаёт heap-копию; старые Content-Length,
 Content-Encoding и digests нельзя переносить в новый UTF-8 response.
 
+В host-примере общий `HttpProxyFilter` принимает единственный `path` только из
+query, применяет maintenance/backend/access guards и сохраняет готовый route в
+attribute для MVC. Form/POST body не выбирает include, повторная маршрутизация в
+controller не выполняется. Этот full text loader превращает только origin `200`
+в собственный UTF-8 `200`. Остальные origin статусы, включая `206`, redirect и
+`401`, дают собственный `502` без cookies/challenge/Location исходного ответа.
+Core fetch продолжает возвращать исходные HTTP статусы; это явная политика host.
+
 Синхронный `fetchBlocking()` выполняется на вызывающем application/Servlet thread,
 не на Jetty I/O или владельце Exchange. Async цепочке нужен `fetch()` и
 `ProxyFetchCall`. Ошибки HTTP остаются ответами; cancellation/deadline/лимиты —
@@ -220,7 +287,10 @@ Resilience4j или retries. Эти механизмы сохраняются в
 Feature toggle остаётся будущим selector на этой границе. Не создавайте client
 на каждый запрос и не меняйте SSL identity активного client.
 
-Текущие проверки и границы: [IMPLEMENTATION.md](../jetty-proxy/IMPLEMENTATION.md).
+Текущие исправления и проверки: [FIXES.md](../jetty-proxy/FIXES.md) и
+[fix-verification.json](../jetty-proxy/fix-verification.json). История выделения
+библиотек — [IMPLEMENTATION.md](../jetty-proxy/IMPLEMENTATION.md), предыдущий совет —
+[USAGE_REVIEW.md](../jetty-proxy/USAGE_REVIEW.md).
 Отчёты [INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md) и
 [COUNCIL_REVIEW.md](COUNCIL_REVIEW.md) фиксируют предыдущую standalone структуру.
 Замер `filter-integration-performance.json` также исторический (`e078071`),

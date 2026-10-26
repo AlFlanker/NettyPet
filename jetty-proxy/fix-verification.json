@@ -1,0 +1,79 @@
+{
+  "runtime_commit": "46db2315298eb39bd19595276255db786560a42d",
+  "date": "2026-10-26",
+  "jdk": "21.0.9+10",
+  "gradle": "8.14.3",
+  "commands": [
+    "gradle build",
+    "bash jetty-proxy-integration-example/verify-published-consumer.sh gradle"
+  ],
+  "build_success": true,
+  "total_tests": 613,
+  "tests": {
+    "app": {
+      "tests": 74,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "proxy": {
+      "tests": 87,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "command-support": {
+      "tests": 84,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-proxy": {
+      "tests": 221,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-proxy-spring": {
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-client-example": {
+      "tests": 104,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-proxy-integration-example": {
+      "tests": 36,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "note": "Gradle reused unchanged tasks; the four Jetty modules passed their complete test suites with the final runtime sources. A final test-only change added the exact 8MiB/10000-link regression.",
+  "published_consumer": {
+    "gradle_module_metadata": "PASS",
+    "maven_pom_only": "PASS",
+    "servlet_api": "Provided by host; absent from library runtime graphs in both metadata modes"
+  },
+  "rewrite_regression": {
+    "input_bytes": 8388608,
+    "replacements": 10000,
+    "chunk_bytes": 65536,
+    "writer_calls_before": 20124,
+    "writer_calls_after": 142,
+    "sha256_matches": true,
+    "reserved_bytes_after": 0,
+    "pool_outstanding_after": 0,
+    "note": "Functional output-write count, not RPS or syscall measurement"
+  },
+  "artifact_sha256": {
+    "jetty-proxy/build/libs/jetty-proxy-1.0.0.jar": "b7fbb400f82f09919e82f280b74337a41c75f46ce14d09b525e23c0393dc80d4",
+    "jetty-proxy-spring/build/libs/jetty-proxy-spring-1.0.0.jar": "cb2f0176b561c26599cce4e297402390ad20debe7f589aea24d9473e001b8106",
+    "jetty-client-example/build/libs/jetty-client-example-1.0.0.jar": "dfd94fdc90debb7962192c07b029528e16ef7f5ccefe977b57145c568b7c7109",
+    "jetty-proxy-integration-example/build/libs/jetty-proxy-integration-example-1.0.0.jar": "85cc68377fa3d9f5ab3c286a6ff4f1e9dc10a61180200ca1f0625f72219cda1f"
+  }
+}

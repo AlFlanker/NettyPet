@@ -7,7 +7,7 @@
 Практическое руководство по исходникам NettyPet: границы library/demo,
 порядок вызовов, тела, прикладные политики и ограниченный resource loader.
 
-**Редакция:** 26 октября 2026 · runtime `65a1f9e` · Java 21 · Boot 4.1.1 · Jetty 12.1.12.
+**Редакция:** 26 октября 2026 · runtime `46db231` · Java 21 · Boot 4.1.1 · Jetty 12.1.12.
 
 ![Архитектура модуля](diagrams/architecture.svg)
 
@@ -75,13 +75,14 @@ Core не зависит от Spring/Netty. Только host-пример по�
    не активирует её. Boot main и server settings находятся в host/demo.
 2. `JettyProxySpringProperties` связывает `jetty.proxy` и создаёт plain core options.
    Qualified beans не используют посторонний HttpClient приложения.
-3. `JettyProxyClientFactory` применяет typed TLS profile и запускает shared client;
+3. Engine/fetch требуют factory-owned client. `JettyProxyClientFactory` применяет
+   typed TLS profile и optional pre-start customizer, запускает shared client;
    затем очищает декодеры и protocol handlers.
    Это делается **после** start: Jetty устанавливает стандартные обработчики при запуске.
 4. В whitelist возвращаются `ContinueProtocolHandler`, `ProcessingProtocolHandler`,
    `EarlyHintsProtocolHandler` и `InformationalProtocolHandler`. Они позволяют
    дождаться финального ответа после промежуточных `100/102/103` и остальных `1xx`.
-5. Engine получает ordered hooks, admission/timer/rewrite workers. Отдельный
+5. Engine получает ordered hooks, admission/timer/rewrite budget. Отдельный
    `ProxyFetchClient` делит client, но имеет собственные capacity/decode workers.
 6. Только приложение регистрирует Filter/Servlet. Demo выбирает `/proxy`,
    host использует свой HttpProxyFilter и handler; library URL не устанавливает.
@@ -98,6 +99,8 @@ stores, alias и TLS 1.2/1.3 до start. Key store не заменяет system 
 Разные identities требуют отдельных clients.
 Spring закрывает engine/fetch, затем client; Filter им не владеет. Без Spring
 client создаётся той же фабрикой, а lifecycle управляет приложение.
+Настройка перед start — factory overload с `Consumer<HttpClient>`; в Spring
+optional bean называется `jettyProxyHttpClientCustomizer`. Посторонний client не подходит.
 
 <!-- pagebreak -->
 ## Один запрос: порядок вызовов
@@ -161,7 +164,8 @@ host отдельно использует `/backend`. Library получает 
    поведение конкретного Jetty и стандартного Servlet API отличается.
 3. `StreamingContent.write(buffer, callback)` отдаёт порцию клиенту upstream.
    Пока callback не сработал, буфер нельзя менять или возвращать pool.
-4. Callback освобождает `owner` и снимает `uploadPending`. Успешный callback
+4. Callback освобождает `owner` и снимает `uploadPending`, в том числе при ошибке release.
+   Буфер повторно не освобождается. Успешный callback
    продолжает pump; ошибочный вызывает `fail(502)`, если обмен ещё активен и upload
    не остановлен ранним ответом. `once()` защищает от повторного завершения.
 5. EOF приводит к `endUpload()`: проверке объявленной длины и `content.close()`.
@@ -215,6 +219,10 @@ Helper объединяет только уже доступные фрагме�
 заполнения batch не ожидаются. Крупные chunks передаются без копирования для batch;
 возможен один отложенный chunk (`carry`).
 
+Готовые rewrite spans меньше 1024 байт также объединяются: максимум `chunkBytes`
+и 1024 spans на запись. Одинокий span и исходный крупный span, включая его хвост,
+остаются borrowed. Один pooled scratch удерживается только до write callback.
+
 ### Два способа записи
 
 Native путь выбирается только для исходного Jetty `ServletApiResponse`, пока output
@@ -234,11 +242,9 @@ Portable путь использует настоящий `ServletOutputStream`,
 действия одного обмена последовательно. События разных обменов могут идти параллельно.
 Это не отдельный поток на запрос и не привязка к одному физическому потоку.
 
-Обычно `drain()` работает в executor `HttpClient`; при rejection используется
-commonPool. `Closeable DrainTask` переносит drain туда и когда executor принял job,
-но отбросил его при stop; CAS допускает только один запуск. Inline drain под сетевыми
-блокировками Jetty не выполняется. `servletGuard` защищает Servlet и переход
-в недоступное состояние. `containerFinished()` запрещает I/O до постановки завершения.
+Обычно `drain()` работает в executor `HttpClient`; rejection/discard при stop
+переносит `Closeable DrainTask` в commonPool, CAS допускает один запуск.
+`servletGuard` защищает Servlet; `containerFinished()` запрещает I/O до завершения.
 
 | Ресурс | Кто владеет / когда освобождает |
 | --- | --- |
@@ -256,11 +262,16 @@ Upload удерживает одну порцию, streaming download — одн
 ограничивает aggregate и lookahead. RSS включает также parser, pool, TLS,
 wrappers и сокеты; формула `maxConcurrent × chunkBytes` не даёт его предел.
 
-Opt-in body policy собирает bounded direct slabs, максимум 65 536 сегментов.
-Два rewrite workers и очередь ограничены. Queued task при отмене удаляется;
-running worker удерживает borrowed slices до возврата и output writes.
-Java-код нельзя принудительно остановить. Для UTF-8/single-byte URL rewrite
-неизменённые части остаются срезами; другие charsets имеют bounded String fallback.
+Rewrite имеет отдельный `ProxyRewriteOptions`: defaults **2 workers / 8 queue /
+128 МиБ** на engine. До сбора резервируется `maxInputBytes + maxOutputBytes +
+chunkBytes`; нехватка даёт `503`. Резерв возвращается после worker/write cleanup,
+включая отмену. Это бюджет payload, не точный RSS; input/output также ограничены
+65 536 сегментами. Queued task удаляется, running worker удерживает input до возврата.
+
+`LinkRewritePolicy.legacyCompatible(settings)` восстанавливает CSS/WCS path selector
+даже без корректного MIME; default constructor выбирает HTML/CSS/JS по MIME.
+UTF-8/single-byte пути заимствуют срезы; другие charsets имеют bounded String fallback.
+Произвольный Java-код нельзя принудительно остановить.
 
 Fetch — отдельный полный ответ: defaults 8 concurrent / 2 decoder workers / 8 queue,
 не streaming semaphore. Wire, decoded и text budgets различаются; heap может
@@ -434,10 +445,9 @@ Jetty Servlet channel. Обычный `async.complete()` при обрезанн
 
 ![Логические условия завершения](diagrams/lifecycle.svg)
 
-Успешный downstream завершается, когда `responseSucceeded`, `upstreamDone`,
-получен последний chunk/EOF (`responseContentEnded`) и нет pending write.
-Последний флаг helper после опережающего чтения сам по себе недостаточен:
-важен последний chunk, реально обработанный владельцем.
+Успех требует `responseSucceeded`, `upstreamDone`, обработанного последнего
+chunk/EOF (`responseContentEnded`) и отсутствия pending write. Опережающее чтение
+helper не заменяет проверку последнего chunk владельцем.
 
 При ошибке `fail()` единожды переводит Exchange в terminal, отменяет deadline,
 освобождает pending chunk/carry, вызывает `content.fail()`, стабильный
@@ -451,11 +461,12 @@ Jetty Servlet channel. Обычный `async.complete()` при обрезанн
 ```text
 terminal && upstreamDone
          && !uploadPending && !writePending && !rewritePending
+         && !errorResponsePending
          && retainedChunks == 0
          && released.compareAndSet(false, true)
 ```
 
-Затем Exchange удаляется из реестра, возвращает permit и завершает `ProxyCall`.
+Затем возвращаются rewrite reservation и permit, удаляется Exchange и завершается `ProxyCall`.
 Handle отсоединяет Exchange: его хранение само по себе не удерживает Servlet.
 Result содержит status/failure, byte counts и elapsed. После commit HTTP status
 сохраняется даже при failure. Callback не читает уже завершённый Servlet.
@@ -487,7 +498,7 @@ Application YAML есть только у demo/host, library собственн�
 | --- | --- | --- |
 | `chunk-bytes` | `65536` | Upload-порция, response buffer клиента и portable scratch; 1024…65536 байт |
 | `max-response-headers-bytes` | `16384` | Положительный лимит upstream parser: headers, trailers и chunk extensions |
-| `max-concurrent` | `128` | Admission и размер rewrite queue; при заполнении `503` |
+| `max-concurrent` | `128` | Admission streaming engine; при заполнении `503` |
 | `max-connections-per-destination` | `64` | Предел upstream-соединений на destination |
 | `max-queued-requests-per-destination` | `64` | Предел очереди ожидания соединения |
 | `selectors` | `2` | Selectors отдельного клиента; не все потоки приложения |
@@ -496,13 +507,13 @@ Application YAML есть только у demo/host, library собственн�
 | `idle-timeout` | `30s` | Отсутствие сетевого трафика, также при активном обмене |
 | `destination-idle-timeout` | `60s` | Удаление простаивающих пустых destinations клиента |
 | `fetch.*` | `8 / 2 / 8` | `max-concurrent` / `decoder-threads` / `max-queued` — отдельный buffered budget |
+| `rewrite.*` | `2 / 8 / 128MB` | `workers` / `max-queued` / `max-buffered-bytes`; отдельный бюджет rewrite |
 
 Destination limits общие, не на selector. Destination TTL удаляет пустые записи
 после закрытия соединений; socket idle timeout сам по себе этого не делает.
-TTL положительный и не задаёт жёсткий предел числа origins.
-Счётчики положительные; длительности должны быть не меньше 1 мс и помещаться
-в миллисекунды `long`; `exchange-timeout` также должен помещаться в наносекунды.
-Переполнение отклоняется при создании properties, до обслуживания запросов.
+TTL положительный и не задаёт жёсткий предел числа origins. Счётчики/бюджеты
+положительные; durations — от 1 мс, millis long; deadline также nanos long.
+Spring ограничивает rewrite workers/queue ещё и `max-concurrent`.
 
 Plan target — trusted HTTP(S) URI с host/port и raw query. Per-plan timeout:
 от 1 мс, nanos long. Demo default upstream `127.0.0.1:9000` ничего не включает в library.
@@ -602,15 +613,20 @@ python3 stress/multipart/check_results.py /tmp/multipart-smoke.jtl
 
 ### Проверки после ревью {#что-уже-проверено-для-кода-5d672f6}
 
-Runtime `65a1f9e`: **553 теста проекта**, из них **308** в Jetty libraries/demo/host;
-failures/errors/skips — ноль. External consumer прошёл Gradle metadata и POM-only.
-Отчёт — `jetty-proxy/IMPLEMENTATION.md`; сборка PDF тесты не повторяет.
+Runtime `46db231`: **613 тестов**, из них **368** в Jetty modules; failures/errors/skips — ноль.
+External consumer проверен через Gradle metadata и POM-only, Servlet API предоставляет host.
+Текущие исправления: [FIXES.md](https://github.com/AlFlanker/NettyPet/blob/feat/jetty-filter-integration/jetty-proxy/FIXES.md),
+детали проверки — `jetty-proxy/fix-verification.json`.
 
 | Группа проверок | Число | Состав и основные сценарии |
 | --- | ---: | --- |
-| Core | 176 | Streaming, fetch, TLS, policies и lifecycle |
-| Spring | 4 | Explicit Import, qualifiers, binding и отсутствие auto routes |
-| Demo / host | 104 / 24 | Реальные HTTP handlers, loader и JAR artifacts |
+| Core | 221 | Streaming, rewrite budgets, fetch, TLS, policies и lifecycle |
+| Spring | 7 | Import, client customizer, binding и отсутствие auto routes |
+| Demo / host | 104 / 36 | Общий Filter, capability guard, full loader и JAR artifacts |
+
+Regression CSS 8 МиБ с 10 000 заменами: writer calls **20 124 → 142**,
+SHA-256 совпадает; после cleanup rewrite reservation и pool owners равны нулю.
+Это вызовы writer, не syscalls или измерение RPS.
 
 ### GET 8 МиБ: диагностика, а не предел системы
 
@@ -624,13 +640,11 @@ failures/errors/skips — ноль. External consumer прошёл Gradle metada
 | p95 / p99, мс | 177 / 224 | 161 / 215 |
 | Ошибок | 0 | 0 |
 
-Общий стенд: 4 CPU, JDK 21.0.9+10, JMeter 5.6.3, heap 256 МиБ–1 ГиБ,
-20 клиентов, прогрев по 5 с, A/B/B/A: четыре фазы по 8 с без rps timer.
-6521 запрос с прогревом: HTTP/размер проверялись всегда, SHA-256 — до/после фаз.
-Генератор и upstream делят CPU с proxy; по два коротких прогона на JVM,
-без независимых forks и доверительного интервала. Это не доказательство
-устойчивого ускорения, production capacity или SLO.
-SHA JAR и raw runs: `filter-integration-performance.json`.
+Исторический стенд: 4 общих CPU, JDK 21.0.9+10/JMeter 5.6.3, 20 клиентов,
+прогрев 5 с, ABBA 4×8 с. Все 6521 запрос проверены по HTTP/размеру, SHA — по фазам.
+Без независимых forks это не доказательство устойчивого ускорения или SLO.
+SHA JAR/raw runs: `filter-integration-performance.json`; другие прежние прогоны
+`65a1f9e` — `jetty-proxy/USAGE_REVIEW.md`.
 
 <!-- pagebreak -->
 ## Диагностика и дальнейшие изменения
@@ -651,10 +665,11 @@ SHA JAR и raw runs: `filter-integration-performance.json`.
 
 ![Отдельная загрузка ресурса](diagrams/fetch.svg)
 
-`ProxyResourceLoader` host делает отдельный GET, не повторяет исходный POST/PUT.
-`fetchBlocking()` вызывается на application thread; async-цепочке нужен `fetch()`.
-Charset берётся из Content-Type; wire/decode/text budgets заданы отдельно.
-Новый UTF-8 response не копирует старые encoding/framing metadata.
+Общий Filter проверяет единственный query `path`, guards и backend, затем MVC
+вызывает loader; тело POST не выбирает include. Loader делает отдельный GET.
+Только origin `200` становится собственным UTF-8 `200`; остальные статусы — `502`
+без upstream cookies/metadata. Legacy adapter для другого target/deadline даёт
+`501` до handoff. `fetchBlocking()` — application thread, не I/O/callback.
 
 ### Перед изменением архитектуры
 
@@ -671,9 +686,9 @@ Charset берётся из Content-Type; wire/decode/text budgets заданы 
 
 Нет Security, retries, connection-bound auth, CONNECT, WebSocket и HTTP/2.
 Trailers/промежуточные ответы downstream не заявлены; multipart непрозрачен.
-Generic URL policies, TLS profiles и bounded fetch есть в core; application cache,
-SSO/storage, registry и Resilience4j остаются у host. Портал целиком не перенесён.
-Range upstream не задаёт ranges преобразованного тела. Mapping — `MIGRATION.md`.
+URL policies, TLS и fetch — core; cache, SSO/storage, registry и Resilience4j — host.
+Портал целиком не перенесён. Ranges преобразованного тела не реализованы.
+Mapping — `MIGRATION.md`.
 
-Исходники: [репозиторий на GitHub](https://github.com/AlFlanker/NettyPet/tree/65a1f9efcfdc57c134dcdf6894218378674f59ed).
+Исходники: [runtime 46db231](https://github.com/AlFlanker/NettyPet/tree/46db2315298eb39bd19595276255db786560a42d).
 Для пересборки документа: `python3 jetty-client-example/docs/build_guide.py`.

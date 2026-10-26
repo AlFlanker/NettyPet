@@ -15,7 +15,9 @@
 у host. Spring Security и feature toggle не добавлены.
 
 [MIGRATION.md](MIGRATION.md) сопоставляет новые APIs с example `examples/proxy/`.
-Текущая реализация и проверки: [IMPLEMENTATION.md](../jetty-proxy/IMPLEMENTATION.md).
+Текущие исправления и проверки: [FIXES.md](../jetty-proxy/FIXES.md) и
+[fix-verification.json](../jetty-proxy/fix-verification.json). Первоначальное
+выделение библиотек описано в [IMPLEMENTATION.md](../jetty-proxy/IMPLEMENTATION.md).
 Реальный портал не предоставлен; встроенная host-проверка доказывает подключение
 библиотек, а не полный перенос закрытых application classes.
 
@@ -41,6 +43,11 @@ PROXY_UPSTREAM=http://127.0.0.1:9000 \
 
 Demo слушает `127.0.0.1:8081`, default upstream — `127.0.0.1:9000`.
 Эти настройки находятся только в demo, не в library JAR.
+
+Engine и fetch принимают factory-owned `HttpClient` из `JettyProxyClientFactory`.
+Явный Spring adapter создаёт такой клиент и управляет его lifecycle. Для настройки
+до start приложение может объявить именованный bean `jettyProxyHttpClientCustomizer`
+типа `Consumer<HttpClient>`; обычные header hooks настраивают отдельный обмен.
 
 ```bash
 curl -i http://127.0.0.1:8081/local
@@ -97,9 +104,12 @@ application proxy Filter до generic form parsing и сохраняет лок�
 | `idle-timeout` | `30s` | Отсутствие трафика в соединении |
 | `destination-idle-timeout` | `60s` | Удаление пустых простаивающих destinations |
 | `fetch.max-concurrent` / `fetch.decoder-threads` / `fetch.max-queued` | `8 / 2 / 8` | Отдельный бюджет полного fetch, не streaming semaphore |
+| `rewrite.workers` / `rewrite.max-queued` / `rewrite.max-buffered-bytes` | `2 / 8 / 128MB` | Отдельные workers, очередь и reservation budget body rewrite |
 
 URI, положительные durations и nanos overflow проверяются до обслуживания запросов.
 В Spring adapter fetch concurrency/queue дополнительно ограничены `max-concurrent`.
+Rewrite workers/queue также ограничены `max-concurrent`. Core задаёт этот бюджет
+через `ProxyRewriteOptions`; `128MB` соответствует 128 МиБ.
 Socket idle timeout не удаляет destination metadata; для этого нужен destination TTL.
 Selectors не равны числу всех потоков JVM, chunk size не задаёт точный предел RSS.
 
@@ -116,6 +126,15 @@ I/O на executor приложения. Передача editor или Servlet �
 Готовые generic URL policies — `HeaderRewriteCustomizer` и `LinkRewritePolicy`;
 bounded `ProxyErrorPolicy` возвращает локальный текст до commit. Полный контракт,
 лимиты и примеры — в [core README](../jetty-proxy/README.md).
+
+Для старого CSS/WCS selector используйте `LinkRewritePolicy.legacyCompatible(settings)`:
+raw path распознаёт эти assets даже без корректного MIME; реальные MIME/charset
+сохраняются. Default constructor выбирает HTML/CSS/JavaScript по MIME.
+До сбора тела engine резервирует `maxInputBytes + maxOutputBytes + chunkBytes`
+из общего rewrite budget; нехватка или заполненная worker queue даёт `503`.
+Reservation возвращается после worker и output callbacks, включая отмену.
+Готовые соседние output spans меньше 1024 байт могут объединяться в один bounded
+scratch, а крупные spans остаются borrowed. Точный RSS этими бюджетами не ограничен.
 
 Cookies/Vary приложения сохраняются при применении upstream headers; при локальной
 ошибке восстанавливаются application headers, metadata тела очищается и ставится

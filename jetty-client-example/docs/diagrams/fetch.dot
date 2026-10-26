@@ -3,10 +3,10 @@ digraph Fetch {
   node [shape=box, style="rounded,filled", fontname="Noto Sans", fontsize=12,
         fontcolor="#15344B", fillcolor="#EFF6FA", color="#45788F", penwidth=1.1, margin="0.13,0.09"];
   edge [color="#417C89", penwidth=1.2, arrowsize=0.7, fontname="Noto Sans", fontsize=12];
-  caller [label="Application loader\nотдельный GET"];
-  network [label="ProxyFetchClient\nwire cap / deadline", fillcolor="#E0F2EF", color="#2D827B"];
+  caller [label="Shared Filter → MVC\nquery-only / guards"];
+  network [label="ProxyFetchClient\nотдельный GET / cap", fillcolor="#E0F2EF", color="#2D827B"];
   decoder [label="decode / charset\ntext budget"];
-  result [label="heap / String\nhost response", fillcolor="#E0F2EF", color="#2D827B"];
+  result [label="Origin 200 → own 200\nother status → 502", fillcolor="#E0F2EF", color="#2D827B"];
   caller -> network;
   network -> decoder;
   decoder -> result;

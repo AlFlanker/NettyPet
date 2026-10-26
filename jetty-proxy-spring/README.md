@@ -35,6 +35,9 @@ class ProxyInfrastructure { }
 Константы имён доступны в `JettyProxyClientConfiguration`. Посторонний `HttpClient`
 приложения не выбирается по типу и не изменяется. Engine и fetch не останавливают
 shared client при собственном `close()`; Spring останавливает его после обоих.
+`jettyProxyHttpClient` имеет `defaultCandidate=false`: добавление библиотеки
+не делает неоднозначной прежнюю unqualified-инъекцию клиентского bean host.
+Для обращения к клиенту библиотеки используйте его явный qualifier.
 
 ## Filter принадлежит приложению
 
@@ -42,7 +45,7 @@ shared client при собственном `close()`; Spring останавли
 Приложение сохраняет свои local/maintenance/backend/forbidden проверки, выбирает
 обработчик и передаёт ему запрос один раз до чтения тела и async.
 
-Существующий Filter может завершаться таким фрагментом:
+В выбранном новом handler существующего Filter выполняется такой фрагмент:
 
 ```java
 ProxyRequestPlan plan = planner.prepare(request); // backend и immutable контекст приложения
@@ -50,11 +53,12 @@ if (plan == null) {
     chain.doFilter(request, response);
     return;
 }
-selectedExecutor.forward(request, response, null, plan);
+engine.forward(request, response, null, plan);
 ```
 
-`selectedExecutor` имеет тип `ProxyExchangeExecutor`; выбор старого или нового
-транспорта принадлежит host. Feature toggle не реализован. Для простого нового
+Выбор старого или нового handler принадлежит `HttpProxyFilter` приложения.
+Старый pipeline не обязан реализовывать `ProxyExchangeExecutor`; этот контракт
+используют адаптеры нового engine. Feature toggle не реализован. Для простого нового
 маршрута можно зарегистрировать готовый `JettyProxyFilter(executor, planner)` с
 `asyncSupported=true`, `DispatcherType.REQUEST` и собственными URL patterns.
 Его регистрация и порядок находятся в host-конфигурации.
@@ -78,6 +82,10 @@ jetty:
     max-queued-requests-per-destination: 32
     exchange-timeout: 30s
     destination-idle-timeout: 60s
+    rewrite:
+      workers: 2
+      max-queued: 8
+      max-buffered-bytes: 128MB
     fetch:
       max-concurrent: 8
       decoder-threads: 2
@@ -96,6 +104,29 @@ Spring adapter дополнительно ограничиваются `jetty.pr
 Это не общий semaphore: streaming и fetch могут одновременно занимать свои
 лимиты. Полные fetch bodies, декодирование и String требуют heap-памяти;
 выбирайте budgets отдельно от streaming concurrency.
+
+Rewrite имеет отдельные workers/queue и бюджет input/output, по умолчанию
+2 / 8 / 128 МиБ. Spring ограничивает workers/queue ещё и общим max-concurrent;
+байтовый бюджет не масштабируется автоматически. Для выбранного ответа
+резервируется `maxInputBytes + maxOutputBytes + chunkBytes`; недостаток бюджета
+даёт 503 до накопления тела. Это лимит заявленных payload budgets, не RSS.
+
+## Настройка клиента до запуска
+
+Опциональный bean выбирается только по имени `jettyProxyHttpClientCustomizer`:
+
+```java
+@Bean(name = JettyProxyClientConfiguration.HTTP_CLIENT_CUSTOMIZER_BEAN_NAME)
+Consumer<HttpClient> proxyHttpClientCustomizer() {
+    return client -> client.setName("portal-upstream");
+}
+```
+
+Можно настроить executor и сетевые параметры; client ещё не запущен. Не вызывайте
+в callback `start()`/`stop()`. Proxy controls и TLS profile применяет фабрика;
+посторонние Consumer beans не выбираются. Это поддерживаемый путь настройки
+клиента с сохранением точного HTTP method, вместо передачи обычного `HttpClient`
+в конструктор engine/fetch.
 
 ## Явный TLS profile
 
@@ -136,3 +167,4 @@ wrappers, multipart, raw URI и локальные routes. Это host-proof, н
 недоступного портала. Контракты stages, error/body policies и bounded fetch —
 в [core README](../jetty-proxy/README.md); результаты —
 [IMPLEMENTATION.md](../jetty-proxy/IMPLEMENTATION.md).
+Актуальные исправления и результаты проверки — [FIXES.md](../jetty-proxy/FIXES.md).
