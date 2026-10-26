@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/** Application-owned text; returned headers describe the upstream response, not re-encoded MVC framing. */
+/** Complete text resource; headers describe the origin, while MVC owns status, encoding and framing. */
 public record LoadedResource(int status, Map<String, List<String>> headers, String text) {
     public LoadedResource {
         Objects.requireNonNull(text);

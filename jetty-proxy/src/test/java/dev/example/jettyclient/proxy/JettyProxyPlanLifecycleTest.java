@@ -315,7 +315,7 @@ class JettyProxyPlanLifecycleTest {
 
     private static final class Fixture implements AutoCloseable {
         final ManualExecutor executor = new ManualExecutor();
-        final HttpClient client = mock(HttpClient.class);
+        final HttpClient client = mock(ProxyHttpClient.class);
         final Request upstream = mock(Request.class, RETURNS_SELF);
         final HttpServletRequest incoming = mock(HttpServletRequest.class);
         final HttpServletResponse outgoing = mock(HttpServletResponse.class);

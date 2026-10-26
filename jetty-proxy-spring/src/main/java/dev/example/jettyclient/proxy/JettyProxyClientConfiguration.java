@@ -1,5 +1,6 @@
 package dev.example.jettyclient.proxy;
 
+import java.util.function.Consumer;
 import org.eclipse.jetty.client.HttpClient;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -19,25 +20,32 @@ public final class JettyProxyClientConfiguration {
     public static final String ENGINE_BEAN_NAME = "jettyProxyEngine";
     public static final String FETCH_CLIENT_BEAN_NAME = "jettyProxyFetchClient";
     public static final String TLS_PROFILE_BEAN_NAME = "jettyProxyTlsProfile";
+    public static final String HTTP_CLIENT_CUSTOMIZER_BEAN_NAME = "jettyProxyHttpClientCustomizer";
 
     @Bean(name = PROPERTIES_BEAN_NAME)
     public JettyProxyProperties jettyProxyProperties(JettyProxySpringProperties bound) {
         return bound.toCoreProperties();
     }
 
-    @Bean(name = HTTP_CLIENT_BEAN_NAME, destroyMethod = "stop")
+    @Bean(name = HTTP_CLIENT_BEAN_NAME, destroyMethod = "stop", defaultCandidate = false)
     public HttpClient jettyHttpClient(@Qualifier(PROPERTIES_BEAN_NAME) JettyProxyProperties properties,
-            @Qualifier(TLS_PROFILE_BEAN_NAME) ObjectProvider<ProxyTlsProfile> profiles)
+            @Qualifier(TLS_PROFILE_BEAN_NAME) ObjectProvider<ProxyTlsProfile> profiles,
+            @Qualifier(HTTP_CLIENT_CUSTOMIZER_BEAN_NAME) ObjectProvider<Consumer<HttpClient>> customizers)
             throws Exception {
-        return JettyProxyClientFactory.createStarted(properties, profiles.getIfAvailable(ProxyTlsProfile::systemTrust));
+        Consumer<HttpClient> customizer = customizers.getIfAvailable(() -> ignored -> { });
+        return JettyProxyClientFactory.createStarted(properties,
+                profiles.getIfAvailable(ProxyTlsProfile::systemTrust), customizer);
     }
 
     /** Spring closes both users before stopping their shared, owned HttpClient. */
     @Bean(name = ENGINE_BEAN_NAME, destroyMethod = "close")
     public JettyProxyEngine jettyProxyEngine(@Qualifier(HTTP_CLIENT_BEAN_NAME) HttpClient client,
             @Qualifier(PROPERTIES_BEAN_NAME) JettyProxyProperties properties,
-            ObjectProvider<ProxyHeaderCustomizer> customizers) {
-        return new JettyProxyEngine(client, properties, customizers.orderedStream().toList());
+            ObjectProvider<ProxyHeaderCustomizer> customizers, JettyProxySpringProperties bound) {
+        ProxyRewriteOptions configured = bound.toRewriteOptions();
+        ProxyRewriteOptions capacity = new ProxyRewriteOptions(Math.min(configured.workers(), properties.maxConcurrent()),
+                Math.min(configured.maxQueued(), properties.maxConcurrent()), configured.maxBufferedBytes());
+        return new JettyProxyEngine(client, properties, customizers.orderedStream().toList(), capacity);
     }
 
     @Bean(name = FETCH_CLIENT_BEAN_NAME, destroyMethod = "close")

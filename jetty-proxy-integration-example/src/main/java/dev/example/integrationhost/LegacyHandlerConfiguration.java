@@ -27,7 +27,7 @@ public class LegacyHandlerConfiguration {
 
     @Bean
     public ProxyRequestHandler legacyProxyHandler(
-            @Qualifier("integrationLegacyNettyEngine") ProxyEngine engine) {
-        return new LegacyProxyHandler(engine);
+            @Qualifier("integrationLegacyNettyEngine") ProxyEngine engine, HostProxyProperties properties) {
+        return new LegacyProxyHandler(engine, properties);
     }
 }

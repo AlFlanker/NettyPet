@@ -131,11 +131,88 @@ class LinkRewritePolicyTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"/assets/theme.css", "/assets/THEME.CSS", "/zk/theme.wcs;v=1",
+            "/zk/THEME.WCS;jsessionid=123?color=dark", "/assets/picture.png.css?x=.jpg"})
+    void legacySelectionRestoresCssAndWcsPathsWhenTheMimeTypeIsMissingOrBinary(String path) throws Exception {
+        LinkRewritePolicy policy = LinkRewritePolicy.legacyCompatible(new LinkRewriteSettings(BACKEND, FRONTEND, LIMIT, LIMIT));
+        ProxyRequestMetadata request = new ProxyRequestMetadata("GET", URI.create(BACKEND + path), Map.of());
+        String source = "url(http://backend.example/internal/font.woff) href='/not-html'";
+        for (Map<String, List<String>> headers : List.<Map<String, List<String>>>of(Map.of(),
+                Map.of("Content-Type", List.of("application/octet-stream")))) {
+            ProxyResponseMetadata response = new ProxyResponseMetadata(200, headers);
+            var selection = policy.select(request, response);
+            assertNotNull(selection, path);
+            ProxyResponseBody result = selection.rewriter().rewrite(response,
+                    body(source.getBytes(StandardCharsets.UTF_8), 3));
+            assertEquals(reference(source, false), new String(bytes(result), StandardCharsets.UTF_8));
+            assertEquals(headers.getOrDefault("Content-Type", List.of()), response.headerValues("Content-Type"),
+                    "Selection must not fabricate text/css metadata");
+        }
+    }
+
+    @Test
+    void legacyCssSelectionKeepsTheActualCharsetAndHtmlSubtype() throws Exception {
+        LinkRewritePolicy policy = LinkRewritePolicy.legacyCompatible(new LinkRewriteSettings(BACKEND, FRONTEND, LIMIT, LIMIT));
+        ProxyRequestMetadata request = new ProxyRequestMetadata("GET", URI.create(BACKEND + "/THEME.WCS;v=1"), Map.of());
+        String source = "Привет http://backend.example/internal/font.woff <a href='/legacy-html'>";
+        ProxyResponseMetadata binary = response("application/octet-stream; charset=windows-1251");
+        var selection = policy.select(request, binary);
+        assertNotNull(selection);
+        ProxyResponseBody result = selection.rewriter().rewrite(binary,
+                body(source.getBytes(Charset.forName("windows-1251")), 3));
+        assertEquals(reference(source, false), new String(bytes(result), Charset.forName("windows-1251")));
+        assertEquals(List.of("application/octet-stream; charset=windows-1251"), binary.headerValues("Content-Type"));
+
+        ProxyResponseMetadata html = response("text/html; charset=UTF-8");
+        var htmlSelection = policy.select(request, html);
+        assertNotNull(htmlSelection);
+        assertEquals(reference(source, true), new String(bytes(htmlSelection.rewriter().rewrite(html,
+                body(source.getBytes(StandardCharsets.UTF_8), 3))), StandardCharsets.UTF_8));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/assets/other?file=.css", "/assets/theme%2Ecss", "/assets/theme.css%3Bv=1",
+            "/assets;v=1/theme.css"})
+    void legacyPathSelectionDoesNotDecodeExtensionsOrMistakeQueryAndMatrixValuesForAFileExtension(String path) {
+        LinkRewritePolicy policy = LinkRewritePolicy.legacyCompatible(new LinkRewriteSettings(BACKEND, FRONTEND, LIMIT, LIMIT));
+        ProxyRequestMetadata request = new ProxyRequestMetadata("GET", URI.create(BACKEND + path), Map.of());
+        assertNull(policy.select(request, response("application/octet-stream")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/images/file.png", "/images/file.jpg", "/fonts/file.woff", "/fonts/file.ttf",
+            "/images/file.jpeg", "/images/file.gif", "/images/file.png/forwarded.html"})
+    void legacyHtmlSelectionRetainsTheExamplesImageAndFontPathExclusions(String path) {
+        LinkRewritePolicy policy = LinkRewritePolicy.legacyCompatible(new LinkRewriteSettings(BACKEND, FRONTEND, LIMIT, LIMIT));
+        ProxyRequestMetadata request = new ProxyRequestMetadata("GET", URI.create(BACKEND + path), Map.of());
+        assertNull(policy.select(request, response("text/html")));
+    }
+
+    @Test
+    void legacySelectionIsExplicitAndPreservesTheOldCssPriorityAndCaseSensitiveBinaryExclusion() {
+        var settings = new LinkRewriteSettings(BACKEND, FRONTEND, LIMIT, LIMIT);
+        LinkRewritePolicy safe = new LinkRewritePolicy(settings);
+        LinkRewritePolicy legacy = LinkRewritePolicy.legacyCompatible(settings);
+        ProxyRequestMetadata css = new ProxyRequestMetadata("GET", URI.create(BACKEND + "/theme.css"), Map.of());
+        assertNull(safe.select(css, response("application/octet-stream")));
+        assertNotNull(legacy.select(css, response("application/octet-stream")));
+        ProxyRequestMetadata png = new ProxyRequestMetadata("GET", URI.create(BACKEND + "/image.png"), Map.of());
+        assertNotNull(legacy.select(png, response("application/css")), "CSS subtype wins before binary path exclusions");
+        ProxyRequestMetadata upperPng = new ProxyRequestMetadata("GET", URI.create(BACKEND + "/image.PNG"), Map.of());
+        assertNotNull(legacy.select(upperPng, response("text/html")), "The legacy exclusion uses case-sensitive contains");
+        assertNotNull(safe.select(REQUEST, response("application/javascript")));
+        assertNull(legacy.select(REQUEST, response("application/javascript")), "Legacy selection is HTML/CSS/WCS, not JS MIME alone");
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"gzip, identity;q=0", "gzip, *;q=0"})
     void anIdentityExcludingClientKeepsTheOriginRepresentation(String preferences) {
         ProxyRequestMetadata request = new ProxyRequestMetadata("GET", BACKEND,
                 Map.of("Accept-Encoding", List.of(preferences)));
         assertNull(policy(LIMIT, LIMIT).select(request, response("text/html")));
+        ProxyRequestMetadata cssRequest = new ProxyRequestMetadata("GET", URI.create(BACKEND + "/theme.wcs"), request.headers());
+        assertNull(LinkRewritePolicy.legacyCompatible(new LinkRewriteSettings(BACKEND, FRONTEND, LIMIT, LIMIT))
+                .select(cssRequest, response("application/octet-stream")));
     }
 
     @Test

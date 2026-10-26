@@ -72,7 +72,7 @@ class JettyProxyPreflightFailureTest {
     }
 
     private static final class Fixture implements AutoCloseable {
-        final HttpClient client = mock(HttpClient.class);
+        final HttpClient client = mock(ProxyHttpClient.class);
         final HttpServletRequest incoming = mock(HttpServletRequest.class);
         final HttpServletResponse outgoing = mock(HttpServletResponse.class);
         final AsyncContext async = mock(AsyncContext.class);

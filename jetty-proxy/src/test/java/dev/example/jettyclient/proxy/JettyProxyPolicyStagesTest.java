@@ -221,7 +221,7 @@ class JettyProxyPolicyStagesTest {
 final class PolicyTestExchange implements AutoCloseable {
     static final URI TARGET = URI.create("http://upstream.example/policy?x=1&x=2");
     final ManualExecutor executor = new ManualExecutor();
-    final HttpClient client = mock(HttpClient.class);
+    final HttpClient client = mock(ProxyHttpClient.class);
     final Request upstream = mock(Request.class, RETURNS_SELF);
     final HttpServletRequest incoming = mock(HttpServletRequest.class);
     final HttpServletResponse outgoing = mock(HttpServletResponse.class);

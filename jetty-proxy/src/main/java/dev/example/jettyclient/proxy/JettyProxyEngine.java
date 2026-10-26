@@ -36,6 +36,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.BiConsumer;
@@ -67,6 +68,8 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
     private final Object admissionGuard = new Object();
     private final ScheduledThreadPoolExecutor timer;
     private final ThreadPoolExecutor rewriteExecutor;
+    private final ProxyRewriteOptions rewriteOptions;
+    private final AtomicLong reservedRewriteBytes = new AtomicLong();
     private volatile boolean stopped;
 
     public JettyProxyEngine(HttpClient client, JettyProxyProperties properties) {
@@ -75,9 +78,15 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
 
     public JettyProxyEngine(HttpClient client, JettyProxyProperties properties,
             List<ProxyHeaderCustomizer> customizers) {
-        this.client = java.util.Objects.requireNonNull(client);
+        this(client, properties, customizers, ProxyRewriteOptions.defaults());
+    }
+
+    public JettyProxyEngine(HttpClient client, JettyProxyProperties properties,
+            List<ProxyHeaderCustomizer> customizers, ProxyRewriteOptions rewriteOptions) {
+        this.client = JettyProxyClientFactory.requireCompatible(client);
         this.properties = java.util.Objects.requireNonNull(properties);
         this.customizers = List.copyOf(customizers);
+        this.rewriteOptions = java.util.Objects.requireNonNull(rewriteOptions, "rewriteOptions");
         admission = new Semaphore(properties.maxConcurrent());
         timer = new ScheduledThreadPoolExecutor(1, task -> {
             Thread thread = new Thread(task, "jetty-proxy-deadlines");
@@ -85,8 +94,8 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
             return thread;
         });
         timer.setRemoveOnCancelPolicy(true);
-        rewriteExecutor = new ThreadPoolExecutor(2, 2, 30, TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(properties.maxConcurrent()), task -> {
+        rewriteExecutor = new ThreadPoolExecutor(rewriteOptions.workers(), rewriteOptions.workers(), 30, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(rewriteOptions.maxQueued()), task -> {
                     Thread thread = new Thread(task, "jetty-proxy-rewrite");
                     thread.setDaemon(true);
                     return thread;
@@ -96,6 +105,20 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
 
     /** Включает обмены, ожидающие возврата собственных буферов после отмены. */
     public int activeRequests() { return exchanges.size(); }
+
+    public ProxyRewriteOptions rewriteOptions() { return rewriteOptions; }
+    /** Reserved payload limits, not measured direct memory or RSS. */
+    public long reservedRewriteBytes() { return reservedRewriteBytes.get(); }
+    public long availableRewriteBytes() { return rewriteOptions.maxBufferedBytes() - reservedRewriteBytes.get(); }
+
+    private boolean reserveRewriteBytes(long bytes) {
+        long used;
+        do {
+            used = reservedRewriteBytes.get();
+            if (bytes > rewriteOptions.maxBufferedBytes() - used) return false;
+        } while (!reservedRewriteBytes.compareAndSet(used, used + bytes));
+        return true;
+    }
 
     /**
      * Передаёт выбранный запрос upstream. Вызывается ровно один раз до чтения тела
@@ -301,6 +324,8 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
         private RewriteTask rewriteTask;
         private Iterator<ByteBuffer> rewrittenBuffers;
         private ByteBuffer rewrittenBuffer;
+        private boolean rewrittenLargeSpan;
+        private long rewriteReservation;
         private PolicyCompletion policyCompletion;
         private boolean responseHeadersSeen;
         private boolean errorResponsePending;
@@ -504,9 +529,13 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                     } else {
                         count = input.read(buffer.array(), buffer.arrayOffset(), buffer.remaining());
                     }
-                } catch (Throwable failure) { owner.release(); throw failure; }
+                } catch (Throwable failure) {
+                    appendFailure(failure, cleanupFailure(owner::release));
+                    throw failure;
+                }
                 if (!servletAvailable || count <= 0) {
-                    owner.release();
+                    Throwable cleanupFailure = cleanupFailure(owner::release);
+                    if (cleanupFailure != null) { callbackCleanupFailed(cleanupFailure); return; }
                     if (count < 0 && servletAvailable) endUpload();
                     return;
                 }
@@ -515,19 +544,25 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                 // limit, while pinned Jetty HttpInput currently advances position.
                 buffer.position(0).limit(count);
                 if (contentLength >= 0 && uploaded > contentLength) {
-                    owner.release();
-                    fail(400, new IOException("Content-Length exceeded"));
+                    IOException failure = new IOException("Content-Length exceeded");
+                    appendFailure(failure, cleanupFailure(owner::release));
+                    fail(400, failure);
                     return;
                 }
                 uploadPending = true;
                 Callback callback = once(() -> dispatch(() -> {
-                    owner.release();
-                    uploadPending = false;
+                    Throwable cleanupFailure;
+                    try { cleanupFailure = cleanupFailure(owner::release); }
+                    finally { uploadPending = false; }
+                    if (cleanupFailure != null) { callbackCleanupFailed(cleanupFailure); return; }
                     pumpUpload();
                 }), failure -> dispatch(() -> {
-                    owner.release();
-                    uploadPending = false;
+                    Throwable cleanupFailure;
+                    try { cleanupFailure = cleanupFailure(owner::release); }
+                    finally { uploadPending = false; }
+                    appendFailure(failure, cleanupFailure);
                     if (!terminal && !uploadStopped) fail(502, failure);
+                    else if (cleanupFailure != null) callbackCleanupFailed(cleanupFailure);
                 }));
                 // AsyncRequestContent slices this buffer and may mutate position/limit.
                 // Only its callback permits returning the memory to the pool.
@@ -613,6 +648,19 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                             fail(502, new IOException("Response exceeds rewrite input limit"));
                             return;
                         }
+                        long reservation;
+                        try {
+                            reservation = Math.addExact(Math.addExact(rewriteSelection.maxInputBytes(),
+                                    rewriteSelection.maxOutputBytes()), properties.chunkBytes());
+                        } catch (ArithmeticException overflow) {
+                            fail(503, new IOException("Rewrite payload reservation exceeds supported range", overflow));
+                            return;
+                        }
+                        if (!reserveRewriteBytes(reservation)) {
+                            fail(503, new IOException("Rewrite buffered payload budget exhausted"));
+                            return;
+                        }
+                        rewriteReservation = reservation;
                         rewriteInput = new BufferedResponseContent(client.getByteBufferPool(),
                                 properties.chunkBytes(), rewriteSelection.maxInputBytes());
                     }
@@ -700,17 +748,19 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                     responseContent.demand(responseDemand);
                 } else if (Content.Chunk.isFailure(chunk)) {
                     Throwable failure = chunk.getFailure();
-                    chunk.release();
+                    appendFailure(failure, cleanupFailure(chunk::release));
                     fail(status(failure), failure);
                     return;
                 } else {
                     responseContentEnded = chunk.isLast();
                     if (!chunk.hasRemaining()) {
-                        chunk.release();
+                        Throwable cleanupFailure = cleanupFailure(chunk::release);
+                        if (cleanupFailure != null) { callbackCleanupFailed(cleanupFailure); return; }
                         if (!responseContentEnded) dispatch(this::pumpDownload);
                     } else if (noBody) {
-                        chunk.release();
-                        fail(502, new IOException("Body on a bodyless response"));
+                        IOException failure = new IOException("Body on a bodyless response");
+                        appendFailure(failure, cleanupFailure(chunk::release));
+                        fail(502, failure);
                         return;
                     } else {
                         // read() transfers ownership; no additional retain is needed.
@@ -726,14 +776,19 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                 writePending = true;
                 int length = chunk.remaining();
                 Callback callback = once(() -> dispatch(() -> {
-                    release(chunk);
-                    writePending = false;
                     downloaded += length;
+                    Throwable cleanupFailure;
+                    try { cleanupFailure = cleanupFailure(() -> release(chunk)); }
+                    finally { writePending = false; }
+                    if (cleanupFailure != null) { callbackCleanupFailed(cleanupFailure); return; }
                     if (!terminal) pumpDownload();
                 }), failure -> dispatch(() -> {
-                    release(chunk);
-                    writePending = false;
+                    Throwable cleanupFailure;
+                    try { cleanupFailure = cleanupFailure(() -> release(chunk)); }
+                    finally { writePending = false; }
+                    appendFailure(failure, cleanupFailure);
                     if (!terminal) fail(502, failure);
+                    else if (cleanupFailure != null) callbackCleanupFailed(cleanupFailure);
                 }));
                 try { downstream.write(chunk.getByteBuffer(), callback); }
                 catch (Throwable failure) { callback.failed(failure); }
@@ -777,7 +832,11 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                 } catch (IOException failure) {
                     fail(502, failure);
                     return;
-                } finally { chunk.release(); }
+                } finally {
+                    Throwable cleanupFailure = cleanupFailure(chunk::release);
+                    if (cleanupFailure != null) callbackCleanupFailed(cleanupFailure);
+                }
+                if (terminal) return;
                 // Yield to cancellation/deadline between bounded reads.
                 if (!responseContentEnded) {
                     dispatch(this::pumpDownload);
@@ -852,23 +911,27 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
         }
 
         private void pumpRewrittenOutput() {
-            while ((rewrittenBuffer == null || !rewrittenBuffer.hasRemaining()) && rewrittenBuffers.hasNext())
-                rewrittenBuffer = rewrittenBuffers.next();
-            if (rewrittenBuffer != null && rewrittenBuffer.hasRemaining()) {
-                int count = Math.min(rewrittenBuffer.remaining(), properties.chunkBytes());
-                ByteBuffer portion = rewrittenBuffer.slice(rewrittenBuffer.position(), count);
-                rewrittenBuffer.position(rewrittenBuffer.position() + count);
+            RewritePortion portion = nextRewritePortion();
+            if (portion != null) {
+                int count = portion.bytes.remaining();
                 headersFlushPending = false;
                 writePending = true;
                 Callback callback = once(() -> dispatch(() -> {
-                    writePending = false;
                     downloaded += count;
+                    Throwable cleanupFailure;
+                    try { cleanupFailure = cleanupFailure(portion::release); }
+                    finally { writePending = false; }
+                    if (cleanupFailure != null) { callbackCleanupFailed(cleanupFailure); return; }
                     pumpDownload();
                 }), failure -> dispatch(() -> {
-                    writePending = false;
+                    Throwable cleanupFailure;
+                    try { cleanupFailure = cleanupFailure(portion::release); }
+                    finally { writePending = false; }
+                    appendFailure(failure, cleanupFailure);
                     fail(502, failure);
+                    if (cleanupFailure != null) callbackCleanupFailed(cleanupFailure);
                 }));
-                try { downstream.write(portion, callback); }
+                try { downstream.write(portion.bytes, callback); }
                 catch (Throwable failure) { callback.failed(failure); }
             } else if (headersFlushPending) {
                 headersFlushPending = false;
@@ -883,6 +946,51 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                 try { downstream.flush(callback); }
                 catch (Throwable failure) { callback.failed(failure); }
             } else completeSuccessfully();
+        }
+
+        private ByteBuffer nextRewriteBuffer() {
+            while ((rewrittenBuffer == null || !rewrittenBuffer.hasRemaining()) && rewrittenBuffers.hasNext()) {
+                rewrittenBuffer = rewrittenBuffers.next();
+                rewrittenLargeSpan = rewrittenBuffer.remaining() >= ResponseContentBuffer.SMALL_FRAGMENT_BYTES;
+            }
+            return rewrittenBuffer != null && rewrittenBuffer.hasRemaining() ? rewrittenBuffer : null;
+        }
+
+        /** All output is available now: combine adjacent small spans, never wait for more input. */
+        private RewritePortion nextRewritePortion() {
+            ByteBuffer current = nextRewriteBuffer();
+            if (current == null) return null;
+            boolean large = rewrittenLargeSpan;
+            int count = Math.min(current.remaining(), properties.chunkBytes());
+            ByteBuffer first = current.slice(current.position(), count);
+            current.position(current.position() + count);
+            if (large) return new RewritePortion(first, null);
+            current = nextRewriteBuffer();
+            if (current == null || rewrittenLargeSpan)
+                return new RewritePortion(first, null);
+
+            RetainableByteBuffer owner = client.getByteBufferPool().acquire(properties.chunkBytes(), true);
+            try {
+                ByteBuffer batch = owner.getByteBuffer();
+                batch.clear().limit(properties.chunkBytes());
+                batch.put(first);
+                int fragments = 1;
+                while (current != null && !rewrittenLargeSpan
+                        && batch.hasRemaining() && fragments < ResponseContentBuffer.MAX_FRAGMENTS) {
+                    int copied = Math.min(current.remaining(), batch.remaining());
+                    int at = batch.position();
+                    batch.put(at, current, current.position(), copied);
+                    batch.position(at + copied);
+                    current.position(current.position() + copied);
+                    fragments++;
+                    current = nextRewriteBuffer();
+                }
+                batch.flip();
+                return new RewritePortion(batch, owner);
+            } catch (RuntimeException | Error failure) {
+                appendFailure(failure, cleanupFailure(owner::release));
+                throw failure;
+            }
         }
 
         private void completeSuccessfully() {
@@ -919,8 +1027,15 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
         }
 
         private void release(Content.Chunk chunk) {
-            chunk.release();
-            retainedChunks.decrementAndGet();
+            try { chunk.release(); }
+            finally { retainedChunks.decrementAndGet(); }
+        }
+
+        private void callbackCleanupFailed(Throwable failure) {
+            if (terminal) {
+                if (terminalFailure == null) terminalFailure = failure;
+                else appendFailure(terminalFailure, failure);
+            } else fail(502, failure);
         }
 
         private void containerFinished() {
@@ -939,12 +1054,13 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
             detachPolicy();
             if (rewriteTask != null) rewriteTask.cancelQueued();
             if (pendingChunk != null) {
-                release(pendingChunk);
+                Content.Chunk disposing = pendingChunk;
                 pendingChunk = null;
+                appendFailure(failure, cleanupFailure(() -> release(disposing)));
             }
-            if (responseContent != null) responseContent.fail(failure);
-            if (content != null) content.fail(failure);
-            if (sent && upstream != null) upstream.abort(failure);
+            if (responseContent != null) appendFailure(failure, cleanupFailure(() -> responseContent.fail(failure)));
+            if (content != null) appendFailure(failure, cleanupFailure(() -> content.fail(failure)));
+            if (sent && upstream != null) appendFailure(failure, cleanupFailure(() -> upstream.abort(failure)));
             if (!servletAvailable) {
                 if (downstream != null) downstream.cancel(failure);
                 return;
@@ -1068,12 +1184,20 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
             }
             if (terminal && upstreamDone && !uploadPending && !writePending && !rewritePending && !errorResponsePending && retainedChunks.get() == 0
                     && released.compareAndSet(false, true)) {
+                if (rewriteReservation != 0) {
+                    reservedRewriteBytes.addAndGet(-rewriteReservation);
+                    rewriteReservation = 0;
+                }
                 exchanges.remove(this);
                 admission.release();
                 handle.complete(new ProxyExchangeResult(responseStatus, terminalFailure, uploaded, downloaded,
                         Duration.ofNanos(System.nanoTime() - started)));
             }
         }
+    }
+
+    private record RewritePortion(ByteBuffer bytes, RetainableByteBuffer owner) {
+        void release() { if (owner != null) owner.release(); }
     }
 
     /** A foreign unresolved stage retains this adapter, never a terminal Servlet exchange. */
@@ -1119,6 +1243,17 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
         if (failure instanceof TimeoutException) return 504;
         if (failure instanceof RejectedExecutionException) return 503;
         return 502;
+    }
+
+    private static Throwable cleanupFailure(Runnable cleanup) {
+        try { cleanup.run(); return null; }
+        catch (RuntimeException | AssertionError | LinkageError failure) { return failure; }
+    }
+
+    private static void appendFailure(Throwable original, Throwable additional) {
+        if (additional == null || original == additional) return;
+        for (Throwable suppressed : original.getSuppressed()) if (suppressed == additional) return;
+        original.addSuppressed(additional);
     }
 
     private static boolean isFatal(Throwable failure) {

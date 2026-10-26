@@ -47,6 +47,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.core.Ordered;
 
 import static org.awaitility.Awaitility.await;
@@ -226,6 +227,90 @@ class HostEmbeddingIntegrationTest {
         assertEquals(before, UPSTREAM_REQUESTS.get());
     }
 
+    @ParameterizedTest
+    @EnumSource(Transport.class)
+    void resourceIncludeUsesTheSameForbiddenPolicyAsTheStreamingRoute(Transport transport) throws Exception {
+        int before = UPSTREAM_REQUESTS.get();
+        for (String path : List.of("/forbidden/private", "/%66orbidden/private")) {
+            assertEquals(403, text(transport, "/resource?path=" + URLEncoder.encode(path, StandardCharsets.UTF_8))
+                    .statusCode());
+        }
+        assertEquals(before, UPSTREAM_REQUESTS.get());
+    }
+
+    @Test
+    void maintenanceBlocksBothStreamingAndResourceIncludesBeforeTheOrigin() throws Exception {
+        Host maintenance = startHost(Transport.JETTY, "--host.proxy.maintenance=true");
+        try {
+            int before = UPSTREAM_REQUESTS.get();
+            for (String path : List.of("/backend/include", "/resource?path=%2Finclude")) {
+                HttpResponse<String> response = client.send(HttpRequest.newBuilder(URI.create(
+                                "http://127.0.0.1:" + maintenance.port() + "/host" + path)).GET().build(),
+                        HttpResponse.BodyHandlers.ofString());
+                assertEquals(503, response.statusCode());
+            }
+            assertEquals(before, UPSTREAM_REQUESTS.get());
+        } finally { maintenance.context().close(); }
+    }
+
+    @Test
+    void fullResourceLoadDoesNotForwardOuterRangeOrConditionalHeaders() throws Exception {
+        HttpResponse<String> response = client.send(request(Transport.JETTY, "/resource?path=%2Finclude-headers")
+                .header("Range", "bytes=0-3").header("If-Range", "\"old\"")
+                .header("If-None-Match", "\"outer\"").header("If-Modified-Since", "Wed, 21 Oct 2015 07:28:00 GMT")
+                .header("If-Match", "\"outer\"").header("If-Unmodified-Since", "Wed, 21 Oct 2015 07:28:00 GMT")
+                .header("Content-Type", "application/outer-format").header("Accept-Language", "ru")
+                .header("X-Unapproved", "outer-only").GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+        assertEquals("full-resource|ru|gzip, deflate", response.body());
+        assertTrue(response.headers().allValues("Content-Range").isEmpty());
+        assertTrue(response.headers().allValues("ETag").isEmpty());
+    }
+
+    @Test
+    void resourcePathCannotBeProvidedByThePostBodyOrAmbiguousQueryParameters() throws Exception {
+        int before = UPSTREAM_REQUESTS.get();
+        HttpResponse<String> bodyOnly = client.send(request(Transport.JETTY, "/resource")
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString("path=%2Finclude")).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, bodyOnly.statusCode());
+        assertEquals(400, text(Transport.JETTY, "/resource?path=%2Finclude&path=%2Fforbidden").statusCode());
+        assertEquals(before, UPSTREAM_REQUESTS.get());
+    }
+
+    @Test
+    void resourceLoaderMapsPartialAuthenticationMethodAndRedirectResponsesToItsOwnBadGateway() throws Exception {
+        for (int status : List.of(206, 401, 405, 302)) {
+            int before = UPSTREAM_REQUESTS.get();
+            HttpResponse<String> response = text(Transport.JETTY, "/resource?path=%2Finclude-status-" + status);
+            assertEquals(502, response.statusCode(), "An include requires a complete 200; upstream status=" + status);
+            for (String header : List.of("Content-Range", "WWW-Authenticate", "Allow", "Location", "Set-Cookie"))
+                assertTrue(response.headers().allValues(header).isEmpty(), header);
+            assertEquals(before + 1, UPSTREAM_REQUESTS.get(), "Do not follow redirects or retry the load");
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(Transport.class)
+    void dynamicRouteDecisionsAreHonoredOrExplicitlyRejectedBeforeTheLegacyOrigin(Transport transport) throws Exception {
+        for (String path : List.of("/dynamic-target", "/dynamic-timeout")) {
+            int before = UPSTREAM_REQUESTS.get();
+            HttpResponse<String> response = text(transport, "/backend" + path);
+            if (transport == Transport.NETTY) {
+                assertEquals(501, response.statusCode());
+                assertEquals("fixed-backend-and-timeout-only",
+                        response.headers().firstValue("X-Proxy-Capability").orElseThrow());
+                assertEquals(before, UPSTREAM_REQUESTS.get());
+            } else {
+                assertEquals(200, response.statusCode());
+                assertEquals("GET|/base/" + (path.equals("/dynamic-target") ? "selected-target" : "dynamic-timeout"),
+                        response.body());
+                assertEquals(before + 1, UPSTREAM_REQUESTS.get());
+            }
+        }
+    }
+
     @Test
     void nativeJettyErrorPolicyWritesUtf8AndPreservesTheApplicationCookieBeforeCommit() throws Exception {
         int before = UPSTREAM_REQUESTS.get();
@@ -244,14 +329,18 @@ class HostEmbeddingIntegrationTest {
         assertEquals(before + 1, UPSTREAM_REQUESTS.get(), "An error renderer must not resend through another pipeline");
     }
 
-    private static Host startHost(Transport transport) throws Exception {
+    private static Host startHost(Transport transport, String... extraProperties) throws Exception {
         Class<?>[] sources = transport == Transport.JETTY
                 ? new Class<?>[]{IntegrationHostApplication.class, WrapperConfiguration.class, ErrorPolicyConfiguration.class}
-                : new Class<?>[]{IntegrationHostApplication.class, WrapperConfiguration.class, LegacyHandlerConfiguration.class};
+                : new Class<?>[]{IntegrationHostApplication.class, WrapperConfiguration.class, LegacyHandlerConfiguration.class,
+                        LegacySelectionConfiguration.class};
+        var arguments = new ArrayList<>(List.of("--server.port=0", "--server.servlet.context-path=/host",
+                "--spring.main.banner-mode=off", "--host.proxy.upstream=http://127.0.0.1:"
+                        + upstream.getAddress().getPort() + "/base", "--host.proxy.timeout=8s",
+                "--jetty.proxy.exchange-timeout=8s"));
+        arguments.addAll(List.of(extraProperties));
         ConfigurableApplicationContext context = new SpringApplicationBuilder(sources)
-                .run("--server.port=0", "--server.servlet.context-path=/host", "--spring.main.banner-mode=off",
-                        "--host.proxy.upstream=http://127.0.0.1:" + upstream.getAddress().getPort() + "/base",
-                        "--host.proxy.timeout=8s", "--jetty.proxy.exchange-timeout=8s");
+                .run(arguments.toArray(String[]::new));
         Object server = context.getClass().getMethod("getWebServer").invoke(context);
         int port = (int)server.getClass().getMethod("getPort").invoke(server);
         return new Host(transport, context, port);
@@ -298,6 +387,24 @@ class HostEmbeddingIntegrationTest {
                     gzip.write("Привет из include".getBytes(java.nio.charset.Charset.forName("windows-1251")));
                 }
                 body = compressed.toByteArray();
+            } else if (path.equals("/base/include-headers")) {
+                for (String name : List.of("Range", "If-Range", "If-None-Match", "If-Modified-Since", "If-Match",
+                        "If-Unmodified-Since", "Content-Type", "X-Unapproved"))
+                    assertNull(exchange.getRequestHeaders().getFirst(name), "Outer representation header leaked: " + name);
+                body = ("full-resource|" + exchange.getRequestHeaders().getFirst("Accept-Language") + "|"
+                        + exchange.getRequestHeaders().getFirst("Accept-Encoding")).getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("ETag", "\"origin-not-mvc\"");
+            } else if (path.startsWith("/base/include-status-")) {
+                int status = Integer.parseInt(path.substring("/base/include-status-".length()));
+                body = "incomplete-or-not-a-resource".getBytes(StandardCharsets.UTF_8);
+                if (status == 206) exchange.getResponseHeaders().set("Content-Range", "bytes 0-25/100");
+                if (status == 401) exchange.getResponseHeaders().set("WWW-Authenticate", "Basic realm=\"origin\"");
+                if (status == 405) exchange.getResponseHeaders().set("Allow", "POST");
+                if (status == 302) exchange.getResponseHeaders().set("Location", "/base/redirect-must-not-follow");
+                exchange.getResponseHeaders().add("Set-Cookie", "failed-load=1; Path=/");
+                exchange.sendResponseHeaders(status, body.length);
+                exchange.getResponseBody().write(body);
+                return;
             } else body = (exchange.getRequestMethod() + "|" + exchange.getRequestURI())
                     .getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, body.length);
@@ -391,6 +498,7 @@ class HostEmbeddingIntegrationTest {
         ProxyRequestHandler testNewHandler(@Qualifier("jettyProxyEngine") JettyProxyEngine engine) {
             var normal = new JettyProxyHandler(engine);
             return (request, response, route) -> {
+                route = variedRoute(route);
                 if (!route.rawPath().equals("/fail-text")) {
                     normal.handle(request, response, route);
                     return;
@@ -400,5 +508,23 @@ class HostEmbeddingIntegrationTest {
                         .build());
             };
         }
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class LegacySelectionConfiguration {
+        @Bean
+        @Primary
+        ProxyRequestHandler testLegacyHandler(@Qualifier("legacyProxyHandler") ProxyRequestHandler delegate) {
+            return (request, response, route) -> delegate.handle(request, response, variedRoute(route));
+        }
+    }
+
+    private static BackendRoute variedRoute(BackendRoute route) {
+        if (route.rawPath().equals("/dynamic-target"))
+            return new BackendRoute(route.backendId(), route.rawPath(), URI.create(route.target().toASCIIString()
+                    .replace("/dynamic-target", "/selected-target")), route.timeout());
+        if (route.rawPath().equals("/dynamic-timeout"))
+            return new BackendRoute(route.backendId(), route.rawPath(), route.target(), Duration.ofSeconds(3));
+        return route;
     }
 }

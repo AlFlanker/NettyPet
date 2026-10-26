@@ -37,7 +37,7 @@ import static org.mockito.Mockito.*;
 class JettyProxyQueuedRewriteCancellationTest {
     @Test
     void cancellingQueuedRewriteReleasesAdmissionBeforeBusyWorkersReturn() throws Exception {
-        HttpClient client = mock(HttpClient.class);
+        HttpClient client = mock(ProxyHttpClient.class);
         when(client.getExecutor()).thenReturn((Executor)Runnable::run);
         when(client.getByteBufferPool()).thenReturn(ByteBufferPool.NON_POOLING);
         JettyProxyProperties properties = new JettyProxyProperties(URI.create("http://upstream.example"),

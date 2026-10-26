@@ -1,8 +1,28 @@
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.attributes.Usage
 
 plugins { id 'application' }
 
 java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+
+configurations {
+    // Probe the library alone, before the host adds its provided Servlet API.
+    publishedCoreCompileProbe {
+        canBeConsumed = false
+        canBeResolved = true
+        attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_API))
+    }
+    publishedCoreRuntimeProbe {
+        canBeConsumed = false
+        canBeResolved = true
+        attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
+    }
+    hostServletApi {
+        canBeConsumed = false
+        canBeResolved = true
+        attributes.attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
+    }
+}
 
 def pomOnly = providers.gradleProperty('publishedPomOnly').map { it.toBoolean() }.getOrElse(false)
 def repositoryRoot = providers.gradleProperty('publicationRoot')
@@ -37,16 +57,31 @@ repositories {
 dependencies {
     implementation 'dev.example:jetty-proxy:1.0.0'
     implementation 'dev.example:jetty-proxy-spring:1.0.0'
-    // A Servlet host provides this API; the independent non-web consumer makes it explicit.
-    implementation 'jakarta.servlet:jakarta.servlet-api:6.1.0'
+    // A Servlet host compiles against its API; this is not a library runtime dependency.
+    compileOnly 'jakarta.servlet:jakarta.servlet-api:6.1.0'
+    hostServletApi 'jakarta.servlet:jakarta.servlet-api:6.1.0'
+    publishedCoreCompileProbe 'dev.example:jetty-proxy:1.0.0'
+    publishedCoreRuntimeProbe 'dev.example:jetty-proxy:1.0.0'
 }
 
 application { mainClass = 'dev.example.publishedconsumer.PublishedConsumerCheck' }
 
 tasks.register('verifyPublishedDependencyShape') {
-    inputs.files(configurations.runtimeClasspath)
+    inputs.files(configurations.compileClasspath, configurations.runtimeClasspath,
+            configurations.publishedCoreCompileProbe, configurations.publishedCoreRuntimeProbe)
     doLast {
         def artifacts = configurations.runtimeClasspath.resolvedConfiguration.resolvedArtifacts
+        def isServletApi = { artifact ->
+            artifact.moduleVersion.id.group == 'jakarta.servlet' && artifact.name == 'jakarta.servlet-api'
+        }
+        def apiProbe = configurations.publishedCoreCompileProbe.resolvedConfiguration.resolvedArtifacts
+        def runtimeProbe = configurations.publishedCoreRuntimeProbe.resolvedConfiguration.resolvedArtifacts
+        if (runtimeProbe.any(isServletApi) || artifacts.any(isServletApi))
+            throw new GradleException('Published libraries leaked a host-provided Servlet API into runtime dependencies')
+        if (apiProbe.any(isServletApi) != !pomOnly)
+            throw new GradleException('Unexpected Servlet API compile contract: Gradle exports compileOnlyApi; Maven uses provided')
+        if (!configurations.compileClasspath.resolvedConfiguration.resolvedArtifacts.any(isServletApi))
+            throw new GradleException('The host did not supply its own Servlet compile API')
         ['jetty-proxy', 'jetty-proxy-spring'].each { name ->
             def found = artifacts.find { it.moduleVersion.id.group == 'dev.example' && it.name == name }
             if (found == null || !(found.id.componentIdentifier instanceof ModuleComponentIdentifier))
@@ -56,11 +91,17 @@ tasks.register('verifyPublishedDependencyShape') {
         }
         if (artifacts.any { it.name == 'jetty-client-example' || it.name.startsWith('spring-boot-starter-') })
             throw new GradleException('Library consumption unexpectedly pulls a demo or application starter')
-        println "Published dependency shape verified (${pomOnly ? 'Maven POM only' : 'Gradle module metadata'})"
+        println "Published dependency shape verified (${pomOnly ? 'Maven POM only' : 'Gradle module metadata'}; Servlet API is host-provided)"
     }
 }
 
 tasks.named('run') {
     dependsOn tasks.named('verifyPublishedDependencyShape')
+    // A real Servlet container supplies this at runtime. The standalone probe
+    // models that layer separately, after verifying the library dependency graph.
+    classpath = sourceSets.main.runtimeClasspath + configurations.hostServletApi
     systemProperty 'published.consumer.pomOnly', pomOnly.toString()
+    doFirst {
+        systemProperty 'published.consumer.hostServletJar', configurations.hostServletApi.singleFile.absolutePath
+    }
 }

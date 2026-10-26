@@ -7,6 +7,6 @@ import java.util.Map;
 /** Separate application seam for template/include loads; unrelated to the Filter's async handler choice. */
 @FunctionalInterface
 public interface ProxyResourceLoader {
-    LoadedResource load(String encodedPathAndQuery, Map<String, List<String>> requestHeaders)
+    LoadedResource load(BackendRoute route, Map<String, List<String>> requestHeaders)
             throws IOException, InterruptedException;
 }

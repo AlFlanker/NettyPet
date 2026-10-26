@@ -8,6 +8,7 @@ import dev.example.jettyclient.proxy.JettyProxyEngine;
 import dev.example.jettyclient.proxy.JettyProxyProperties;
 import dev.example.jettyclient.proxy.ProxyFetchClient;
 import dev.example.jettyclient.proxy.ProxyFetchRequest;
+import dev.example.jettyclient.proxy.ProxyRewriteOptions;
 import jakarta.servlet.Filter;
 import jakarta.servlet.Servlet;
 import java.io.IOException;
@@ -38,6 +39,9 @@ public final class PublishedConsumerCheck {
     public static void main(String[] arguments) throws Exception {
         verifyOrdinaryJar(JettyProxyEngine.class, "JettyProxyEngine.class");
         verifyOrdinaryJar(JettyProxyClientConfiguration.class, "JettyProxyClientConfiguration.class");
+        Path servletSource = Path.of(Servlet.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        check(servletSource.equals(Path.of(System.getProperty("published.consumer.hostServletJar"))),
+                "Servlet API must come from the explicit host layer, not a library runtime dependency");
         assertAbsent("dev.example.jettyclient.JettyClientExampleApplication");
         assertAbsent("dev.example.integrationhost.IntegrationHostApplication");
 
@@ -92,16 +96,23 @@ public final class PublishedConsumerCheck {
         try (var context = new AnnotationConfigApplicationContext()) {
             context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("consumer", Map.of(
                     "jetty.proxy.selectors", "1", "jetty.proxy.max-concurrent", "2",
-                    "jetty.proxy.exchange-timeout", "3s", "jetty.proxy.fetch.max-concurrent", "2")));
+                    "jetty.proxy.exchange-timeout", "3s", "jetty.proxy.fetch.max-concurrent", "2",
+                    "jetty.proxy.rewrite.workers", "1", "jetty.proxy.rewrite.max-queued", "1",
+                    "jetty.proxy.rewrite.max-buffered-bytes", "4MB")));
             context.getBeanFactory().registerSingleton("unrelatedHostHttpClient", unrelated);
+            context.registerBean(ExistingHostClientUser.class);
             context.register(ConsumerConfiguration.class);
             context.refresh();
             owned = context.getBean(JettyProxyClientConfiguration.HTTP_CLIENT_BEAN_NAME, HttpClient.class);
             check(owned != unrelated && owned.isStarted() && !unrelated.isStarted(), "Client qualifiers are not isolated");
+            check(context.getBean(ExistingHostClientUser.class).client() == unrelated,
+                    "Import changed an existing unqualified host HttpClient injection");
             check(context.getBeansOfType(Filter.class).isEmpty(), "Transport import registered a Filter");
             check(context.getBeansOfType(Servlet.class).isEmpty(), "Transport import registered a Servlet");
             check(context.getEnvironment().getProperty("server.port") == null, "Library leaked server settings");
             check(context.getBean(JettyProxyProperties.class).maxConcurrent() == 2, "Binding did not configure core options");
+            check(context.getBean(JettyProxyClientConfiguration.ENGINE_BEAN_NAME, JettyProxyEngine.class).rewriteOptions()
+                    .equals(new ProxyRewriteOptions(1, 1, 4L * 1024 * 1024)), "Published rewrite binding did not configure the engine");
             ProxyFetchClient fetch = context.getBean(JettyProxyClientConfiguration.FETCH_CLIENT_BEAN_NAME, ProxyFetchClient.class);
             var result = fetch.fetchBlocking(ProxyFetchRequest.builder(base.resolve("/spring/explicit"))
                     .timeout(Duration.ofSeconds(3)).maxWireBytes(4096).maxDecodedBytes(4096).build());
@@ -153,4 +164,10 @@ public final class PublishedConsumerCheck {
     @Configuration(proxyBeanMethods = false)
     @Import(JettyProxyClientConfiguration.class)
     static class ConsumerConfiguration { }
+
+    static final class ExistingHostClientUser {
+        private final HttpClient client;
+        ExistingHostClientUser(HttpClient upstream) { client = upstream; }
+        HttpClient client() { return client; }
+    }
 }

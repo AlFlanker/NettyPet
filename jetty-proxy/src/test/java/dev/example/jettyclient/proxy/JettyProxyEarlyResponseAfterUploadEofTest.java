@@ -45,7 +45,7 @@ class JettyProxyEarlyResponseAfterUploadEofTest {
     @Test
     void fullEarlyResponseSurvivesSenderFailureAfterServletEofButBeforeRequestSuccess() throws Exception {
         ManualExecutor executor = new ManualExecutor();
-        HttpClient client = mock(HttpClient.class);
+        HttpClient client = mock(ProxyHttpClient.class);
         Request upstream = mock(Request.class, RETURNS_SELF);
         AtomicReference<Request.Content> requestContent = new AtomicReference<>();
         AtomicReference<Response.Listener> listener = new AtomicReference<>();

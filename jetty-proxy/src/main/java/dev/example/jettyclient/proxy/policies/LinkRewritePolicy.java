@@ -40,10 +40,28 @@ public final class LinkRewritePolicy implements ProxyResponseBodyPolicy {
     private final String backendSlash;
     private final String frontend;
     private final String frontendSlash;
+    private final boolean legacySelection;
     private final Map<Charset, Encoded> encoded = new ConcurrentHashMap<>();
 
     public LinkRewritePolicy(LinkRewriteSettings settings) {
+        this(settings, false);
+    }
+
+    /**
+     * Opt-in selector matching the portal example: CSS/WCS target paths (matrix
+     * suffix removed, case-insensitive) or a CSS MIME subtype are text assets even
+     * when Content-Type is missing/wrong. Otherwise only text/html is selected,
+     * with the example's case-sensitive image/font path exclusions. Response
+     * metadata is never replaced: its actual charset and subtype still determine
+     * decoding and whether the HTML-specific passes run.
+     */
+    public static LinkRewritePolicy legacyCompatible(LinkRewriteSettings settings) {
+        return new LinkRewritePolicy(settings, true);
+    }
+
+    private LinkRewritePolicy(LinkRewriteSettings settings, boolean legacySelection) {
         this.settings = Objects.requireNonNull(settings, "settings");
+        this.legacySelection = legacySelection;
         backendSlash = settings.backendBase().toASCIIString() + "/";
         frontend = settings.frontendBase().toASCIIString();
         frontendSlash = frontend + "/";
@@ -54,12 +72,15 @@ public final class LinkRewritePolicy implements ProxyResponseBodyPolicy {
         // an identity representation on a client which explicitly excludes it.
         if (!ContentCodingPreferences.identityAllowed(request.headerValues("Accept-Encoding"))) return null;
         List<String> contentTypes = response.headerValues("Content-Type");
-        if (contentTypes.isEmpty()) return null;
         Map<String, String> parameters = new LinkedHashMap<>();
-        String mime = Objects.toString(HttpField.getValueParameters(contentTypes.getFirst(), parameters), "")
+        String mime = Objects.toString(contentTypes.isEmpty() ? null
+                        : HttpField.getValueParameters(contentTypes.getFirst(), parameters), "")
                 .trim().toLowerCase(Locale.ROOT);
-        if (!List.of("text/html", "text/css", "text/javascript", "application/javascript", "application/x-javascript")
-                .contains(mime)) return null;
+        int slash = mime.indexOf('/');
+        String subtype = slash < 0 ? "" : mime.substring(slash + 1);
+        if (legacySelection ? !legacyTextAsset(request, mime, subtype)
+                : !List.of("text/html", "text/css", "text/javascript", "application/javascript", "application/x-javascript")
+                        .contains(mime)) return null;
         Charset charset = StandardCharsets.UTF_8;
         for (var parameter : parameters.entrySet()) {
             if (parameter.getKey().equalsIgnoreCase("charset")) {
@@ -68,7 +89,7 @@ public final class LinkRewritePolicy implements ProxyResponseBodyPolicy {
             }
         }
         Encoded literals = encoded.computeIfAbsent(charset, this::encode);
-        boolean html = mime.equals("text/html");
+        boolean html = legacySelection ? subtype.equals("html") : mime.equals("text/html");
         return new Selection(settings.maxInputBytes(), settings.maxOutputBytes(), (metadata, input) -> {
             if (input.length() > settings.maxInputBytes()) throw new RewriteLimitException("Rewrite input limit exceeded");
             if (!literals.syntax.byteMode) return rewriteFallback(input, literals.syntax.charset, html);
@@ -81,6 +102,19 @@ public final class LinkRewritePolicy implements ProxyResponseBodyPolicy {
             if (result.length() > settings.maxOutputBytes()) throw new RewriteLimitException("Rewrite output limit exceeded");
             return result;
         });
+    }
+
+    private static boolean legacyTextAsset(ProxyRequestMetadata request, String mime, String subtype) {
+        String rawPath = Objects.toString(request.target().getRawPath(), "");
+        // getRawPath already excludes the query and must not decode %2E/%3B.
+        int matrix = rawPath.indexOf(';');
+        String assetPath = (matrix < 0 ? rawPath : rawPath.substring(0, matrix)).toLowerCase(Locale.ROOT);
+        if (assetPath.endsWith(".css") || assetPath.endsWith(".wcs") || subtype.equals("css")) return true;
+        if (!mime.equals("text/html")) return false;
+        // Deliberately retain the old case-sensitive contains(), not a new suffix heuristic.
+        for (String binary : List.of(".png", ".jpg", ".woff", ".ttf", ".jpeg", ".gif"))
+            if (rawPath.contains(binary)) return false;
+        return true;
     }
 
     private Encoded encode(Charset charset) {

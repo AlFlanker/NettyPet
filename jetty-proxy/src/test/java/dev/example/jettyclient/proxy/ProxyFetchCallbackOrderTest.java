@@ -34,7 +34,7 @@ class ProxyFetchCallbackOrderTest {
     @ValueSource(booleans = {false, true})
     void preservesACompleteResponseOnSenderOnlyFailureButNeverHidesAResponseFailure(boolean responseFails)
             throws Exception {
-        HttpClient client = mock(HttpClient.class);
+        HttpClient client = mock(ProxyHttpClient.class);
         Request upstream = mock(Request.class, RETURNS_SELF);
         AtomicReference<Response.Listener> listener = new AtomicReference<>();
         when(client.getExecutor()).thenReturn((Executor)Runnable::run);

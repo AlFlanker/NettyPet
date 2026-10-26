@@ -28,7 +28,7 @@ class JettyProxyEngineContractTest {
     @MethodSource("invalidTargets")
     void rejectsInvalidResolvedTargetBeforeAsyncAdmissionOrClientUse(String description, URI target)
             throws Exception {
-        HttpClient client = mock(HttpClient.class);
+        HttpClient client = mock(ProxyHttpClient.class);
         HttpServletRequest incoming = incoming();
         HttpServletResponse outgoing = mock(HttpServletResponse.class);
         try (JettyProxyEngine engine = new JettyProxyEngine(client, properties())) {
@@ -60,7 +60,7 @@ class JettyProxyEngineContractTest {
     void usesResolvedRawTargetWithoutDependingOnProxyServletMapping() throws Exception {
         String rawTarget = "http://upstream.example:8080/base//a%2Fb/%E2%82%AC"
                 + "?x=1&x=2&plus=a+b&encoded=%252F&empty=";
-        HttpClient client = mock(HttpClient.class);
+        HttpClient client = mock(ProxyHttpClient.class);
         when(client.getExecutor()).thenReturn((Executor)Runnable::run);
         // Stop at the client boundary: this test verifies route handoff, not network streaming.
         when(client.newRequest(any(URI.class))).thenThrow(new IllegalStateException("Client boundary reached"));
@@ -103,7 +103,7 @@ class JettyProxyEngineContractTest {
 
     @Test
     void closedEngineRejectsWithoutStartingAsyncOrUsingClient() throws Exception {
-        HttpClient client = mock(HttpClient.class);
+        HttpClient client = mock(ProxyHttpClient.class);
         HttpServletRequest incoming = incoming();
         HttpServletResponse outgoing = mock(HttpServletResponse.class);
         try (JettyProxyEngine engine = new JettyProxyEngine(client, properties())) {
@@ -119,7 +119,7 @@ class JettyProxyEngineContractTest {
     }
 
     private static void assertInvalidAsyncState(HttpServletRequest incoming) throws Exception {
-        HttpClient client = mock(HttpClient.class);
+        HttpClient client = mock(ProxyHttpClient.class);
         HttpServletResponse outgoing = mock(HttpServletResponse.class);
         try (JettyProxyEngine engine = new JettyProxyEngine(client, properties())) {
             engine.forward(incoming, outgoing, VALID_TARGET);

@@ -41,7 +41,7 @@ class JettyProxyCleanupFailureTest {
 
     @Test
     void rewriteSlabReleaseFailureDoesNotStrandCompletionOrAdmission() throws Exception {
-        HttpClient client = mock(HttpClient.class);
+        HttpClient client = mock(ProxyHttpClient.class);
         ManualExecutor executor = new ManualExecutor();
         Request upstream = mock(Request.class, RETURNS_SELF);
         AtomicReference<Response.Listener> listener = new AtomicReference<>();
@@ -117,7 +117,7 @@ class JettyProxyCleanupFailureTest {
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void missingClientExecutorRejectsBeforeTakingOwnershipAndCanRecover(boolean supplied) {
-        HttpClient client = new HttpClient();
+        HttpClient client = new ProxyHttpClient(new org.eclipse.jetty.client.transport.HttpClientTransportOverHTTP(1));
         assertNull(client.getExecutor(), "Jetty creates its default executor only when the client starts");
         HttpServletRequest incoming = incoming();
         HttpServletResponse outgoing = mock(HttpServletResponse.class);

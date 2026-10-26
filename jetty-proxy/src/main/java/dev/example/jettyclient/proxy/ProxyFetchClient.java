@@ -64,7 +64,7 @@ public final class ProxyFetchClient implements AutoCloseable {
     }
 
     public ProxyFetchClient(HttpClient client, JettyProxyProperties properties, ProxyFetchOptions options) {
-        this.client = Objects.requireNonNull(client, "client");
+        this.client = JettyProxyClientFactory.requireCompatible(client);
         this.properties = Objects.requireNonNull(properties, "properties");
         this.options = Objects.requireNonNull(options, "options");
         admission = new Semaphore(options.maxConcurrent());
@@ -132,6 +132,7 @@ public final class ProxyFetchClient implements AutoCloseable {
             throw new IOException("Fetch cancelled", cancelled);
         } catch (ExecutionException failed) {
             Throwable cause = failed.getCause();
+            throwIfFatal(cause);
             if (cause instanceof IOException io) throw io;
             if (cause instanceof TimeoutException timeout) throw timeoutFailure(timeout);
             throw new IOException("Fetch failed", cause);
@@ -224,15 +225,29 @@ public final class ProxyFetchClient implements AutoCloseable {
             events.add(action);
             if (work.getAndIncrement() != 0) return;
             int remaining = 1;
+            Throwable fatal = null;
             do {
                 Action event;
                 while ((event = events.poll()) != null) {
                     try { event.run(); }
-                    catch (Throwable failure) { fail(failure); }
-                    finally { cleanup(); }
+                    catch (Throwable failure) {
+                        fatal = rememberFatal(fatal, failure);
+                        try { fail(failure); }
+                        catch (VirtualMachineError | ThreadDeath failureDuringAbort) {
+                            fatal = rememberFatal(fatal, failureDuringAbort);
+                        }
+                    } finally {
+                        try { cleanup(); }
+                        catch (VirtualMachineError | ThreadDeath failureDuringCleanup) {
+                            fatal = rememberFatal(fatal, failureDuringCleanup);
+                        }
+                    }
                 }
                 remaining = work.addAndGet(-remaining);
             } while (remaining != 0);
+            // Abort may synchronously enqueue onComplete. Drain that cleanup and
+            // release the owner before propagating a fatal error to its caller.
+            throwIfFatal(fatal);
         }
 
         void start() {
@@ -359,8 +374,12 @@ public final class ProxyFetchClient implements AutoCloseable {
                     Throwable failure = problem;
                     dispatch(() -> {
                         finished();
+                        if (failure != null) {
+                            if (!terminal) fail(failure);
+                            throwIfFatal(failure);
+                            return;
+                        }
                         if (terminal) return;
-                        if (failure != null) { fail(failure); return; }
                         terminal = true;
                         deadline.cancel(false);
                         cleanup();
@@ -438,9 +457,17 @@ public final class ProxyFetchClient implements AutoCloseable {
             }
             if (upstream != null && !upstreamDone) {
                 try { upstream.abort(failure); }
-                catch (Throwable abortFailure) { if (abortFailure != failure) failure.addSuppressed(abortFailure); }
+                catch (Throwable abortFailure) {
+                    if (abortFailure != failure) {
+                        if (isFatal(abortFailure) && !isFatal(failure)) {
+                            abortFailure.addSuppressed(failure);
+                            failure = abortFailure;
+                        } else failure.addSuppressed(abortFailure);
+                    }
+                }
             }
             handle.fail(failure);
+            throwIfFatal(failure);
         }
 
         void cleanup() {
@@ -457,8 +484,27 @@ public final class ProxyFetchClient implements AutoCloseable {
                 calls.remove(this);
                 admission.release();
             }
-            if (releaseFailure != null) handle.fail(releaseFailure);
+            if (releaseFailure != null) {
+                handle.fail(releaseFailure);
+                throwIfFatal(releaseFailure);
+            }
         }
+    }
+
+    private static boolean isFatal(Throwable failure) {
+        return failure instanceof VirtualMachineError || failure instanceof ThreadDeath;
+    }
+
+    private static Throwable rememberFatal(Throwable first, Throwable failure) {
+        if (!isFatal(failure)) return first;
+        if (first == null) return failure;
+        if (first != failure) first.addSuppressed(failure);
+        return first;
+    }
+
+    private static void throwIfFatal(Throwable failure) {
+        if (failure instanceof VirtualMachineError fatal) throw fatal;
+        if (failure instanceof ThreadDeath fatal) throw fatal;
     }
 
     private static Map<String, List<String>> snapshot(HttpFields headers) {

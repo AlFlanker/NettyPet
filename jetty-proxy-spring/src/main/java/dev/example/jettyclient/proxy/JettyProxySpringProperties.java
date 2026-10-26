@@ -4,6 +4,7 @@ import java.net.URI;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
+import org.springframework.util.unit.DataSize;
 
 /** Spring Boot binding adapter; transport validation remains in the plain core properties. */
 @ConfigurationProperties("jetty.proxy")
@@ -19,7 +20,8 @@ public record JettyProxySpringProperties(
         @DefaultValue("60s") Duration exchangeTimeout,
         @DefaultValue("30s") Duration idleTimeout,
         @DefaultValue("60s") Duration destinationIdleTimeout,
-        @DefaultValue Fetch fetch) {
+        @DefaultValue Fetch fetch,
+        @DefaultValue Rewrite rewrite) {
 
     public JettyProxyProperties toCoreProperties() {
         return new JettyProxyProperties(upstream, chunkBytes, maxResponseHeadersBytes, maxConcurrent,
@@ -31,8 +33,17 @@ public record JettyProxySpringProperties(
         return new ProxyFetchOptions(fetch.maxConcurrent(), fetch.decoderThreads(), fetch.maxQueued());
     }
 
+    public ProxyRewriteOptions toRewriteOptions() {
+        return new ProxyRewriteOptions(rewrite.workers(), rewrite.maxQueued(), rewrite.maxBufferedBytes().toBytes());
+    }
+
     /** Separate full-body fetch budget; no body-related defaults are installed into the host application. */
     public record Fetch(@DefaultValue("8") int maxConcurrent,
                         @DefaultValue("2") int decoderThreads,
                         @DefaultValue("8") int maxQueued) { }
+
+    /** One reservation budget per engine, separate from bounded resource fetch. */
+    public record Rewrite(@DefaultValue("2") int workers,
+                          @DefaultValue("8") int maxQueued,
+                          @DefaultValue("128MB") DataSize maxBufferedBytes) { }
 }

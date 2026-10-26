@@ -19,18 +19,22 @@ import org.springframework.core.Ordered;
 @Import(JettyProxyClientConfiguration.class)
 public class HostConfiguration {
     @Bean
-    ProxyResourceLoader proxyResourceLoader(@Qualifier("jettyProxyFetchClient") ProxyFetchClient fetch,
-            HostProxyProperties properties) {
-        return new JettyResourceLoader(fetch, properties);
+    ProxyResourceLoader proxyResourceLoader(@Qualifier("jettyProxyFetchClient") ProxyFetchClient fetch) {
+        return new JettyResourceLoader(fetch);
     }
 
     @Bean
-    FilterRegistrationBean<HttpProxyFilter> applicationProxyFilter(HostProxyProperties properties,
+    ApplicationRoutePolicy applicationRoutePolicy(HostProxyProperties properties) {
+        return new ApplicationRoutePolicy(new FixedBackendRouteResolver(properties), properties::maintenance,
+                ApplicationRoutePolicy::forbidden);
+    }
+
+    @Bean
+    FilterRegistrationBean<HttpProxyFilter> applicationProxyFilter(ApplicationRoutePolicy policy,
             @Qualifier("jettyProxyEngine") JettyProxyEngine engine,
             ObjectProvider<ProxyRequestHandler> handlers) {
         ProxyRequestHandler handler = handlers.getIfAvailable(() -> new JettyProxyHandler(engine));
-        var filter = new HttpProxyFilter(new FixedBackendRouteResolver(properties), properties::maintenance,
-                ApplicationRoutePolicy::forbidden, handler);
+        var filter = new HttpProxyFilter(policy, handler);
         var registration = new FilterRegistrationBean<>(filter);
         registration.setName("applicationHttpProxyFilter");
         registration.addUrlPatterns("/*");

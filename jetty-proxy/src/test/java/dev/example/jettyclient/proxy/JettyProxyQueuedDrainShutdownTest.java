@@ -33,7 +33,7 @@ class JettyProxyQueuedDrainShutdownTest {
         CountDownLatch workerExited = new CountDownLatch(1);
 
         // No network client is started: its executor is all this pre-start exchange needs.
-        HttpClient client = new HttpClient();
+        HttpClient client = new ProxyHttpClient(new org.eclipse.jetty.client.transport.HttpClientTransportOverHTTP(1));
         client.setExecutor(executor);
         JettyProxyProperties properties = new JettyProxyProperties(URI.create("http://127.0.0.1:9000"),
                 1024, 16_384, 1, 1, 1, 1, Duration.ofSeconds(1), Duration.ofSeconds(30), Duration.ofSeconds(30));

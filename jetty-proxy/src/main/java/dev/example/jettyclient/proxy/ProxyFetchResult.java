@@ -45,7 +45,10 @@ public final class ProxyFetchResult {
 
     public String bodyAsString() throws IOException { return bodyAsString(StandardCharsets.UTF_8); }
 
-    /** Content-Type charset имеет приоритет над явно заданным fallback; platform default не используется. */
+    /**
+     * Content-Type charset имеет приоритет над явно заданным fallback; platform default не используется.
+     * Charset и character limit проверяются при этом вызове, после успешного завершения fetch.
+     */
     public String bodyAsString(Charset fallback) throws IOException {
         Charset charset = responseCharset(Objects.requireNonNull(fallback));
         try (var reader = new InputStreamReader(new ByteArrayInputStream(body), charset)) {
