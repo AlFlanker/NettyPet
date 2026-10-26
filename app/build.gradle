@@ -11,6 +11,8 @@ dependencies {
         exclude group: 'org.springframework.boot', module: 'spring-boot-starter-tomcat'
     }
     implementation 'org.springframework.boot:spring-boot-starter-jetty'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'io.micrometer:micrometer-registry-prometheus:1.16.7'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     // Проверяем аварийный запуск настоящего фасада, управляя его внутренним EventLoop в тесте.
     testImplementation 'io.netty:netty-transport'

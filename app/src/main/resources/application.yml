@@ -14,7 +14,7 @@ server:
 proxy:
   # Базовый HTTP(S)-адрес upstream; переменная PROXY_UPSTREAM переопределяет его.
   # Необязательный путь (/base) добавляется перед путём запроса. Query, fragment и user info запрещены.
-  upstream: ${PROXY_UPSTREAM:http://localhost:9000}
+  upstream: ${PROXY_UPSTREAM:http://localhost:9001}
 
   # Число Netty I/O-потоков для соединений с upstream; минимум 1.
   # Это не число потоков Jetty и не лимит запросов в секунду.

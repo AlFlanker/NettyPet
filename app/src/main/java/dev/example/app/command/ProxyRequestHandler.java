@@ -36,13 +36,20 @@ public final class ProxyRequestHandler {
         var finished = new AtomicBoolean();
         // Подписываемся на том же потоке Servlet: до возврата из фильтра транспорт должен
         // вызвать startAsync(), либо команда должна синхронно завершиться отказом.
-        command.execute().subscribe(ignored -> { }, failure::set, () -> finished.set(true));
+        command.execute()
+                .subscribe(ignored -> { },
+                        failure::set,
+                        () -> finished.set(true));
         Throwable rejected = unwrap(failure.get());
         // Reactor передаёт некоторые Error, например AssertionError, через onError. Транспорт
         // мог уже вызвать startAsync() и прервать обмен перед выбросом ошибки. Пробрасываем
         // Error до проверки владельца и обращения к response: объект уже может быть завершён.
-        if (rejected instanceof Error fatal) throw fatal;
-        if (command.handedToProxy()) return;
+        if (rejected instanceof Error fatal) {
+            throw fatal;
+        }
+        if (command.handedToProxy()) {
+            return;
+        }
         if (failure.get() == null && !finished.get()) {
             throw new IllegalStateException("Command returned without starting or rejecting");
         }

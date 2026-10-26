@@ -41,10 +41,14 @@ final class RegistryMetricsBinding implements AutoCloseable {
     RegistryMetricsBinding(MeterRegistry meters, BulkheadRegistry bulkheads, TimeLimiterRegistry timers,
                            CircuitBreakerRegistry breakers, RetryRegistry retries) {
         try {
-            add(bulkheads, meters, target -> TaggedBulkheadMetrics.ofBulkheadRegistry(bulkheads).bindTo(target));
-            add(timers, meters, target -> TaggedTimeLimiterMetrics.ofTimeLimiterRegistry(timers).bindTo(target));
-            add(breakers, meters, target -> TaggedCircuitBreakerMetrics.ofCircuitBreakerRegistry(breakers).bindTo(target));
-            add(retries, meters, target -> TaggedRetryMetrics.ofRetryRegistry(retries).bindTo(target));
+            add(bulkheads, meters, target ->
+                    TaggedBulkheadMetrics.ofBulkheadRegistry(bulkheads).bindTo(target));
+            add(timers, meters, target ->
+                    TaggedTimeLimiterMetrics.ofTimeLimiterRegistry(timers).bindTo(target));
+            add(breakers, meters, target ->
+                    TaggedCircuitBreakerMetrics.ofCircuitBreakerRegistry(breakers).bindTo(target));
+            add(retries, meters, target ->
+                    TaggedRetryMetrics.ofRetryRegistry(retries).bindTo(target));
         } catch (RuntimeException | Error failure) {
             close();
             throw failure;

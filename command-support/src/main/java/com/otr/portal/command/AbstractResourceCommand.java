@@ -25,7 +25,8 @@ public abstract class AbstractResourceCommand<T> implements Command<T> {
      * При подписке запускает защищённую ресурсную операцию, а её ошибку передаёт в резервный путь.
      * Таймаут результата не завершает очистку задачи и не возвращает её слот раньше времени.
      */
-    @Override public final Mono<T> execute() {
+    @Override
+    public final Mono<T> execute() {
         return Mono.defer(() -> resilienceDecorator.executeTask(CommandContext.builder()
                         .commandName(getCommandName()).properties(commandProperties).build(), this::doStart))
                 .onErrorResume(this::fallbackOnError);

@@ -46,9 +46,12 @@ public final class ProxyDiagnostics {
         commands.bulkhead().getEventPublisher().onCallRejected(ignored -> bulkheadRejected.increment());
         commands.circuitBreaker().getEventPublisher().onCallNotPermitted(ignored -> circuitRejected.increment());
         commands.timeLimiter().getEventPublisher()
-                .onSuccess(ignored -> timeLimiterSuccess.increment())
-                .onError(ignored -> timeLimiterErrors.increment())
-                .onTimeout(ignored -> timeLimiterTimeouts.increment());
+                .onSuccess(ignored ->
+                        timeLimiterSuccess.increment())
+                .onError(ignored ->
+                        timeLimiterErrors.increment())
+                .onTimeout(ignored ->
+                        timeLimiterTimeouts.increment());
     }
 
     @ManagedAttribute(description = "Spring lifecycle readiness; no network probe or upstream health claim")

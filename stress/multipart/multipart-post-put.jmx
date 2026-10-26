@@ -1,84 +1,77 @@
-<?xml version='1.0' encoding='UTF-8'?>
+<?xml version="1.0" encoding="UTF-8"?>
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
-    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Multipart POST + PUT: body integrity" enabled="true">
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Multipart POST + PUT: body integrity">
       <stringProp name="TestPlan.comments">Fixed raw multipart fixture for both methods; server and client verify SHA-256 of the full body and every part. See README.md.</stringProp>
-      <boolProp name="TestPlan.functional_mode">false</boolProp>
-      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
-      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments">
-        <collectionProp name="Arguments.arguments" />
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments">
+        <collectionProp name="Arguments.arguments"/>
       </elementProp>
     </TestPlan>
     <hashTree>
-      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="POST then PUT per iteration" enabled="true">
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="POST then PUT per iteration">
         <stringProp name="ThreadGroup.num_threads">${__P(threads,20)}</stringProp>
         <stringProp name="ThreadGroup.ramp_time">${__P(ramp,5)}</stringProp>
         <stringProp name="ThreadGroup.duration">${__P(duration,60)}</stringProp>
-        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
         <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
         <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller">
-          <boolProp name="LoopController.continue_forever">false</boolProp>
           <stringProp name="LoopController.loops">${__P(loops,-1)}</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
         </elementProp>
       </ThreadGroup>
       <hashTree>
-        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST multipart (verified)" enabled="true">
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST multipart (verified)">
+          <intProp name="HTTPSampler.connect_timeout">5000</intProp>
+          <intProp name="HTTPSampler.response_timeout">60000</intProp>
           <stringProp name="HTTPSampler.domain">${__P(host,127.0.0.1)}</stringProp>
           <stringProp name="HTTPSampler.port">${__P(port,8080)}</stringProp>
           <stringProp name="HTTPSampler.protocol">http</stringProp>
           <stringProp name="HTTPSampler.path">${__P(path,/proxy/multipart)}</stringProp>
           <stringProp name="HTTPSampler.method">POST</stringProp>
-          <stringProp name="HTTPSampler.connect_timeout">5000</stringProp>
-          <stringProp name="HTTPSampler.response_timeout">60000</stringProp>
-          <stringProp name="HTTPSampler.implementation">HttpClient4</stringProp>
-          <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
-          <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
           <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
-          <boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
-          <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
-          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
-            <collectionProp name="Arguments.arguments" />
-          </elementProp>
           <elementProp name="HTTPsampler.Files" elementType="HTTPFileArgs">
             <collectionProp name="HTTPFileArgs.files">
-              <elementProp name="" elementType="HTTPFileArg">
+              <elementProp name="${__P(dataDir,/tmp/nettypet-multipart)}/multipart.body" elementType="HTTPFileArg">
                 <stringProp name="File.path">${__P(dataDir,/tmp/nettypet-multipart)}/multipart.body</stringProp>
-                <stringProp name="File.paramname" />
+                <stringProp name="File.paramname"></stringProp>
                 <stringProp name="File.mimetype">application/octet-stream</stringProp>
               </elementProp>
             </collectionProp>
           </elementProp>
+          <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+            <collectionProp name="Arguments.arguments"/>
+          </elementProp>
+          <stringProp name="HTTPSampler.implementation">HttpClient4</stringProp>
         </HTTPSamplerProxy>
-        <hashTree />
-        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="PUT multipart (verified)" enabled="true">
+        <hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="PUT multipart (verified)">
+          <intProp name="HTTPSampler.connect_timeout">5000</intProp>
+          <intProp name="HTTPSampler.response_timeout">60000</intProp>
           <stringProp name="HTTPSampler.domain">${__P(host,127.0.0.1)}</stringProp>
           <stringProp name="HTTPSampler.port">${__P(port,8080)}</stringProp>
           <stringProp name="HTTPSampler.protocol">http</stringProp>
           <stringProp name="HTTPSampler.path">${__P(path,/proxy/multipart)}</stringProp>
           <stringProp name="HTTPSampler.method">PUT</stringProp>
-          <stringProp name="HTTPSampler.connect_timeout">5000</stringProp>
-          <stringProp name="HTTPSampler.response_timeout">60000</stringProp>
-          <stringProp name="HTTPSampler.implementation">HttpClient4</stringProp>
-          <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
-          <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
           <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
-          <boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
-          <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
-          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
-            <collectionProp name="Arguments.arguments" />
-          </elementProp>
           <elementProp name="HTTPsampler.Files" elementType="HTTPFileArgs">
             <collectionProp name="HTTPFileArgs.files">
-              <elementProp name="" elementType="HTTPFileArg">
+              <elementProp name="${__P(dataDir,/tmp/nettypet-multipart)}/multipart.body" elementType="HTTPFileArg">
                 <stringProp name="File.path">${__P(dataDir,/tmp/nettypet-multipart)}/multipart.body</stringProp>
-                <stringProp name="File.paramname" />
+                <stringProp name="File.paramname"></stringProp>
                 <stringProp name="File.mimetype">application/octet-stream</stringProp>
               </elementProp>
             </collectionProp>
           </elementProp>
+          <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+            <collectionProp name="Arguments.arguments"/>
+          </elementProp>
+          <stringProp name="HTTPSampler.implementation">HttpClient4</stringProp>
         </HTTPSamplerProxy>
-        <hashTree />
-        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Multipart Content-Type and correlation" enabled="true">
+        <hashTree/>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Multipart Content-Type and correlation">
           <collectionProp name="HeaderManager.headers">
             <elementProp name="" elementType="Header">
               <stringProp name="Header.name">Content-Type</stringProp>
@@ -90,49 +83,49 @@
             </elementProp>
           </collectionProp>
         </HeaderManager>
-        <hashTree />
-        <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Load local manifest and unique request id" enabled="true">
+        <hashTree/>
+        <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Load local manifest and unique request id">
           <stringProp name="scriptLanguage">groovy</stringProp>
           <stringProp name="cacheKey">true</stringProp>
-          <stringProp name="filename" />
-          <stringProp name="parameters" />
+          <stringProp name="filename"></stringProp>
+          <stringProp name="parameters"></stringProp>
           <stringProp name="script">import groovy.json.JsonSlurper
 import java.util.UUID
 
-def expected = vars.getObject('multipartExpected')
+def expected = vars.getObject(&apos;multipartExpected&apos;)
 if (expected == null) {
-    def directory = props.getProperty('dataDir', '/tmp/nettypet-multipart')
-    expected = new JsonSlurper().parse(new File(directory, 'manifest.json'), 'UTF-8')
-    vars.putObject('multipartExpected', expected)
+    def directory = props.getProperty(&apos;dataDir&apos;, &apos;/tmp/nettypet-multipart&apos;)
+    expected = new JsonSlurper().parse(new File(directory, &apos;manifest.json&apos;), &apos;UTF-8&apos;)
+    vars.putObject(&apos;multipartExpected&apos;, expected)
 }
-vars.put('multipartContentType', expected.content_type as String)
-vars.put('requestId', UUID.randomUUID().toString())
-vars.put('expectedMethod', sampler.getMethod())
+vars.put(&apos;multipartContentType&apos;, expected.content_type as String)
+vars.put(&apos;requestId&apos;, UUID.randomUUID().toString())
+vars.put(&apos;expectedMethod&apos;, sampler.getMethod())
 </stringProp>
         </JSR223PreProcessor>
-        <hashTree />
-        <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="Require verified body, parts, method and request id" enabled="true">
+        <hashTree/>
+        <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="Require verified body, parts, method and request id">
           <stringProp name="scriptLanguage">groovy</stringProp>
           <stringProp name="cacheKey">true</stringProp>
-          <stringProp name="filename" />
-          <stringProp name="parameters" />
+          <stringProp name="filename"></stringProp>
+          <stringProp name="parameters"></stringProp>
           <stringProp name="script">import groovy.json.JsonSlurper
 
 try {
-    assert prev.getResponseCode() == '200': 'HTTP ' + prev.getResponseCode()
-    def expected = vars.getObject('multipartExpected')
-    assert expected != null: 'Missing local manifest'
+    assert prev.getResponseCode() == &apos;200&apos;: &apos;HTTP &apos; + prev.getResponseCode()
+    def expected = vars.getObject(&apos;multipartExpected&apos;)
+    assert expected != null: &apos;Missing local manifest&apos;
     def actual = new JsonSlurper().parseText(prev.getResponseDataAsString())
-    assert actual.verified == true: 'Upstream rejected body integrity'
-    assert actual.method == vars.get('expectedMethod'): 'Method changed'
-    assert actual.request_id == vars.get('requestId'): 'Wrong response/request correlation'
-    assert actual.size == expected.size: 'Body size changed'
-    assert actual.sha256 == expected.sha256: 'Body SHA-256 changed'
-    assert actual.parts.size() == expected.parts.size(): 'Part count changed'
+    assert actual.verified == true: &apos;Upstream rejected body integrity&apos;
+    assert actual.method == vars.get(&apos;expectedMethod&apos;): &apos;Method changed&apos;
+    assert actual.request_id == vars.get(&apos;requestId&apos;): &apos;Wrong response/request correlation&apos;
+    assert actual.size == expected.size: &apos;Body size changed&apos;
+    assert actual.sha256 == expected.sha256: &apos;Body SHA-256 changed&apos;
+    assert actual.parts.size() == expected.parts.size(): &apos;Part count changed&apos;
     expected.parts.eachWithIndex { part, i -&gt;
         def received = actual.parts[i]
-        ['name', 'filename', 'size', 'sha256'].each { key -&gt;
-            assert received[key] == part[key]: 'Part ' + i + ': ' + key + ' changed'
+        [&apos;name&apos;, &apos;filename&apos;, &apos;size&apos;, &apos;sha256&apos;].each { key -&gt;
+            assert received[key] == part[key]: &apos;Part &apos; + i + &apos;: &apos; + key + &apos; changed&apos;
         }
     }
 } catch (Throwable error) {
@@ -141,7 +134,7 @@ try {
 }
 </stringProp>
         </JSR223Assertion>
-        <hashTree />
+        <hashTree/>
       </hashTree>
     </hashTree>
   </hashTree>

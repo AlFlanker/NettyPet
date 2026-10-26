@@ -47,11 +47,17 @@ public final class JettyProxyIoAdapter implements ProxyIoAdapter {
     public DownstreamWriter createWriter(HttpServletRequest request, HttpServletResponse response) {
         // Не извлекаем исходный response из обёрток: фильтры могут преобразовывать тело.
         // Для них используем переносимый путь через предоставленный ServletOutputStream.
-        if (response.getClass() != ServletApiResponse.class) return null;
-        ServletContextResponse contextResponse = ServletContextResponse.getServletContextResponse(response);
-        if (contextResponse.isWritingOrStreaming()) return null;
+        if (response.getClass() != ServletApiResponse.class) {
+            return null;
+        }
+        var contextResponse =
+                ServletContextResponse.getServletContextResponse(response);
+        if (contextResponse.isWritingOrStreaming()) {
+            return null;
+        }
 
         Response coreResponse = ServletCoreResponse.wrap(contextResponse.getRequest(), response, false);
+
         return new Writer(contextResponse, coreResponse);
     }
 
@@ -67,7 +73,9 @@ public final class JettyProxyIoAdapter implements ProxyIoAdapter {
 
         // Response.write передаёт данные прямо в HttpStream, не в буфер Servlet HttpOutput.
         // Пустая запись после каждой порции тела не добавляет отправленных данных.
-        @Override public boolean flushesOnWrite() { return true; }
+        @Override public boolean flushesOnWrite() {
+            return true;
+        }
 
         /** Передаёт текущую порцию без завершения ответа; completion подтверждает возврат буфера. */
         @Override
@@ -103,12 +111,16 @@ public final class JettyProxyIoAdapter implements ProxyIoAdapter {
 
         @Override
         public void succeeded() {
-            if (compareAndSet(false, true)) completion.complete(null);
+            if (compareAndSet(false, true)) {
+                completion.complete(null);
+            }
         }
 
         @Override
         public void failed(Throwable failure) {
-            if (compareAndSet(false, true)) completion.complete(failure);
+            if (compareAndSet(false, true)) {
+                completion.complete(failure);
+            }
         }
 
         /** Сообщает Jetty, что уведомление не выполняет блокирующую работу. */

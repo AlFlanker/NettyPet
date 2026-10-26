@@ -55,8 +55,11 @@ public final class ProxyRequestCommand extends AbstractResourceCommand<ProxyResu
      * появляется после освобождения ресурсов; локальные исходы превращаются в исключения,
      * чтобы политика CircuitBreaker могла отличить их от отказов целевого сервера.
      */
-    @Override protected CommandTask<ProxyResult> doStart() throws IOException {
-        if (!invoked.compareAndSet(false, true)) throw new IllegalStateException("Command is single-use");
+    @Override
+    protected CommandTask<ProxyResult> doStart() throws IOException {
+        if (!invoked.compareAndSet(false, true)) {
+            throw new IllegalStateException("Command is single-use");
+        }
         ProxyCall call = engine.forwardAsync(request, response, rawPath);
         handedToProxy = true;
         // HTTP-ошибки целевого сервера остаются ProxyResult для проверки recordResult.
@@ -77,5 +80,7 @@ public final class ProxyRequestCommand extends AbstractResourceCommand<ProxyResu
     }
 
     /** Показывает, что forwardAsync() вернулся и HTTP-обработчик больше не должен писать ответ. */
-    public boolean handedToProxy() { return handedToProxy; }
+    public boolean handedToProxy() {
+        return handedToProxy;
+    }
 }

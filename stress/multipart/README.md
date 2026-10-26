@@ -8,7 +8,7 @@
 ## Подготовка данных
 
 ```bash
-python3 stress/multipart/prepare.py --output /tmp/nettypet-multipart --size-mib 8
+python3 prepare.py --output /tmp/nettypet-multipart --size-mib 8
 ```
 
 Генератор создаёт два файла вне репозитория:
@@ -27,7 +27,7 @@ python3 stress/multipart/prepare.py --output /tmp/nettypet-multipart --size-mib 
 В первом терминале:
 
 ```bash
-python3 stress/multipart/server.py --manifest /tmp/nettypet-multipart/manifest.json --port 9001
+python3 server.py --manifest /tmp/nettypet-multipart/manifest.json --port 9001
 ```
 
 Во втором терминале соберите приложение и запустите его с новым upstream:
@@ -73,7 +73,7 @@ for method in POST PUT; do
   curl --fail-with-body -X "$method" \
     -H 'Content-Type: multipart/form-data; boundary=NettyPet-Multipart-Integrity-2026' \
     --data-binary @/tmp/nettypet-multipart/multipart.body \
-    http://127.0.0.1:8081/proxy/multipart
+    http://127.0.0.1:8080/proxy/multipart
 done
 ```
 
