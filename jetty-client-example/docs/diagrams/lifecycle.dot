@@ -7,8 +7,8 @@ digraph lifecycle {
   finish [label="async.complete()\nterminal=true"];
   failure [label="fail(code, cause)\nterminal=true"];
   cancel [label="upstream.abort()\nОтмена I/O"];
-  gates [label="finishCleanup()\nupstreamDone\n!uploadPending\n!writePending\nretainedChunks=0", fillcolor="#E0F2EF", color="#2D827B"];
-  release [label="Один раз\nadmission.release()", fillcolor="#E0F2EF", color="#2D827B"];
+  gates [label="finishCleanup()\nupstreamDone\n!uploadPending\n!writePending\n!rewritePending\n!errorResponsePending\nretainedChunks=0", fillcolor="#E0F2EF", color="#2D827B"];
+  release [label="Один раз\nrewrite budget назад\nadmission.release()\nhandle отсоединён\nresult.complete()", fillcolor="#E0F2EF", color="#2D827B"];
 
   { rank=same; success; failure; }
   { rank=same; finish; cancel; }

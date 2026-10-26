@@ -1,0 +1,243 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :command-support:compileJava UP-TO-DATE
+> Task :proxy:compileJava UP-TO-DATE
+> Task :app:compileJava UP-TO-DATE
+> Task :app:processResources UP-TO-DATE
+> Task :app:classes UP-TO-DATE
+> Task :app:resolveMainClassName UP-TO-DATE
+> Task :command-support:processResources NO-SOURCE
+> Task :command-support:classes UP-TO-DATE
+> Task :command-support:jar UP-TO-DATE
+> Task :proxy:processResources NO-SOURCE
+> Task :proxy:classes UP-TO-DATE
+> Task :proxy:jar UP-TO-DATE
+> Task :app:bootJar UP-TO-DATE
+> Task :app:jar SKIPPED
+> Task :app:assemble UP-TO-DATE
+> Task :app:compileTestJava UP-TO-DATE
+> Task :app:processTestResources NO-SOURCE
+> Task :app:testClasses UP-TO-DATE
+> Task :app:test UP-TO-DATE
+> Task :app:check UP-TO-DATE
+> Task :app:build UP-TO-DATE
+> Task :command-support:sourcesJar UP-TO-DATE
+> Task :command-support:assemble UP-TO-DATE
+> Task :command-support:compileTestJava UP-TO-DATE
+> Task :command-support:processTestResources NO-SOURCE
+> Task :command-support:testClasses UP-TO-DATE
+> Task :command-support:test UP-TO-DATE
+> Task :command-support:check UP-TO-DATE
+> Task :command-support:build UP-TO-DATE
+> Task :jetty-proxy:compileJava UP-TO-DATE
+> Task :jetty-proxy-spring:compileJava UP-TO-DATE
+> Task :jetty-client-example:compileJava UP-TO-DATE
+> Task :jetty-client-example:processResources UP-TO-DATE
+> Task :jetty-client-example:classes UP-TO-DATE
+> Task :jetty-client-example:resolveMainClassName UP-TO-DATE
+> Task :jetty-proxy:processResources NO-SOURCE
+> Task :jetty-proxy:classes UP-TO-DATE
+> Task :jetty-proxy:jar UP-TO-DATE
+> Task :jetty-proxy-spring:processResources NO-SOURCE
+> Task :jetty-proxy-spring:classes UP-TO-DATE
+> Task :jetty-proxy-spring:jar UP-TO-DATE
+> Task :jetty-client-example:bootJar UP-TO-DATE
+> Task :jetty-client-example:jar SKIPPED
+> Task :jetty-client-example:assemble UP-TO-DATE
+> Task :jetty-client-example:compileTestJava UP-TO-DATE
+> Task :jetty-client-example:processTestResources NO-SOURCE
+> Task :jetty-client-example:testClasses UP-TO-DATE
+> Task :jetty-client-example:test UP-TO-DATE
+> Task :jetty-client-example:check UP-TO-DATE
+> Task :jetty-client-example:build UP-TO-DATE
+> Task :jetty-proxy:sourcesJar UP-TO-DATE
+> Task :jetty-proxy:assemble UP-TO-DATE
+> Task :jetty-proxy:compileTestJava UP-TO-DATE
+> Task :jetty-proxy:processTestResources NO-SOURCE
+> Task :jetty-proxy:testClasses UP-TO-DATE
+> Task :jetty-proxy:test UP-TO-DATE
+> Task :jetty-proxy:check UP-TO-DATE
+> Task :jetty-proxy:build UP-TO-DATE
+> Task :jetty-proxy-integration-example:compileJava UP-TO-DATE
+> Task :jetty-proxy-integration-example:processResources UP-TO-DATE
+> Task :jetty-proxy-integration-example:classes UP-TO-DATE
+> Task :jetty-proxy-integration-example:resolveMainClassName UP-TO-DATE
+> Task :jetty-proxy-integration-example:verifyLibraryArtifacts
+> Task :jetty-proxy-integration-example:bootJar UP-TO-DATE
+> Task :jetty-proxy-integration-example:jar SKIPPED
+> Task :jetty-proxy-integration-example:assemble UP-TO-DATE
+> Task :jetty-proxy-integration-example:compileLegacyCacheFixtureJava UP-TO-DATE
+> Task :jetty-proxy-integration-example:processLegacyCacheFixtureResources NO-SOURCE
+> Task :jetty-proxy-integration-example:legacyCacheFixtureClasses UP-TO-DATE
+> Task :jetty-proxy-integration-example:compileTestJava
+> Task :jetty-proxy-integration-example:processTestResources NO-SOURCE
+> Task :jetty-proxy-integration-example:testClasses
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+> Task :jetty-proxy-integration-example:test
+> Task :jetty-proxy-integration-example:check
+> Task :jetty-proxy-integration-example:build
+> Task :jetty-proxy-spring:sourcesJar UP-TO-DATE
+> Task :jetty-proxy-spring:assemble UP-TO-DATE
+> Task :jetty-proxy-spring:compileTestJava UP-TO-DATE
+> Task :jetty-proxy-spring:processTestResources NO-SOURCE
+> Task :jetty-proxy-spring:testClasses UP-TO-DATE
+> Task :jetty-proxy-spring:test UP-TO-DATE
+> Task :jetty-proxy-spring:check UP-TO-DATE
+> Task :jetty-proxy-spring:build UP-TO-DATE
+> Task :proxy:sourcesJar UP-TO-DATE
+> Task :proxy:assemble UP-TO-DATE
+> Task :proxy:compileTestJava UP-TO-DATE
+> Task :proxy:processTestResources NO-SOURCE
+> Task :proxy:testClasses UP-TO-DATE
+> Task :proxy:test UP-TO-DATE
+> Task :proxy:check UP-TO-DATE
+> Task :proxy:build UP-TO-DATE
+
+> Task :jetty-proxy-integration-example:cacheSoak
+11:50:37.738 [main] INFO org.eclipse.jetty.server.Server -- jetty-12.1.12; built: 2026-08-03T22:37:55.389Z; git: 10dd3948f37767b84cc2c62358364f042e51dbbe; jvm 21.0.9+10-LTS
+11:50:37.754 [main] INFO org.eclipse.jetty.server.handler.ContextHandler -- Started oeje11s.ServletContextHandler@6cb6decd{ROOT,/,b=null,a=AVAILABLE,h=oeje11s.ServletHandler@c7045b9{STARTED}}
+11:50:37.759 [main] INFO org.eclipse.jetty.ee11.servlet.ServletContextHandler -- Started oeje11s.ServletContextHandler@6cb6decd{ROOT,/,b=null,a=AVAILABLE,h=oeje11s.ServletHandler@c7045b9{STARTED}}
+11:50:37.761 [main] INFO org.eclipse.jetty.server.AbstractConnector -- Started oejs.ServerConnector@6853425f{HTTP/1.1, (http/1.1)}{127.0.0.1:32859}
+11:50:37.766 [main] INFO org.eclipse.jetty.server.Server -- Started oejs.Server@68d279ec{STARTING}[12.1.12,sto=0] @31ms
+[cache-soak] phase=warmup seconds=0.0 complete=0 abort=0 hit=1 miss=1 eviction=0 heapMiB=22.6 postGcMiB=20.6 reserveMiB=0.0
+[cache-soak] phase=warmup seconds=5.0 complete=221 abort=852 hit=580 miss=512 eviction=16 heapMiB=171.2 postGcMiB=133.2 reserveMiB=32.0
+[cache-soak] phase=warmup seconds=10.1 complete=562 abort=2257 hit=1554 miss=1286 eviction=60 heapMiB=179.4 postGcMiB=170.4 reserveMiB=32.0
+[cache-soak] phase=warmup seconds=15.1 complete=981 abort=4038 hit=2775 miss=2263 eviction=118 heapMiB=161.7 postGcMiB=147.4 reserveMiB=32.0
+[cache-soak] phase=warmup seconds=20.0 complete=1395 abort=5758 hit=3963 miss=3212 eviction=177 heapMiB=143.7 postGcMiB=127.7 reserveMiB=48.0
+[cache-soak] phase=warmup seconds=25.1 complete=1830 abort=7676 hit=5264 miss=4264 eviction=232 heapMiB=169.3 postGcMiB=150.8 reserveMiB=64.0
+[cache-soak] phase=steady seconds=30.1 complete=2299 abort=9902 hit=6748 miss=5472 eviction=296 heapMiB=153.1 postGcMiB=128.1 reserveMiB=32.0
+[cache-soak] phase=steady seconds=35.0 complete=2780 abort=12142 hit=8254 miss=6690 eviction=358 heapMiB=185.7 postGcMiB=160.7 reserveMiB=32.0
+[cache-soak] phase=steady seconds=40.0 complete=3295 abort=14669 hit=9925 miss=8060 eviction=431 heapMiB=117.5 postGcMiB=108.5 reserveMiB=16.0
+[cache-soak] phase=steady seconds=45.1 complete=3814 abort=17188 hit=11596 miss=9428 eviction=502 heapMiB=226.6 postGcMiB=151.6 reserveMiB=48.0
+[cache-soak] phase=steady seconds=50.1 complete=4348 abort=19823 hit=13337 miss=10855 eviction=580 heapMiB=220.5 postGcMiB=154.5 reserveMiB=32.0
+[cache-soak] phase=steady seconds=55.1 complete=4866 abort=22470 hit=15071 miss=12287 eviction=655 heapMiB=183.7 postGcMiB=146.7 reserveMiB=16.0
+[cache-soak] phase=steady seconds=60.0 complete=5379 abort=25002 hit=16745 miss=13656 eviction=725 heapMiB=134.7 postGcMiB=101.7 reserveMiB=0.0
+[cache-soak] phase=steady seconds=65.0 complete=5917 abort=27633 hit=18485 miss=15086 eviction=801 heapMiB=261.0 postGcMiB=109.0 reserveMiB=64.0
+[cache-soak] phase=steady seconds=70.1 complete=6454 abort=30322 hit=20255 miss=16541 eviction=872 heapMiB=245.6 postGcMiB=185.6 reserveMiB=64.0
+[cache-soak] phase=steady seconds=75.1 complete=7036 abort=33127 hit=22121 miss=18061 eviction=952 heapMiB=219.3 postGcMiB=139.3 reserveMiB=32.0
+[cache-soak] phase=steady seconds=80.1 complete=7589 abort=35851 hit=23917 miss=19544 eviction=1019 heapMiB=188.1 postGcMiB=170.1 reserveMiB=64.0
+[cache-soak] phase=steady seconds=85.0 complete=8113 abort=38448 hit=25636 miss=20946 eviction=1099 heapMiB=243.1 postGcMiB=170.1 reserveMiB=16.0
+[cache-soak] phase=steady seconds=90.1 complete=8659 abort=41272 hit=27484 miss=22469 eviction=1178 heapMiB=191.9 postGcMiB=133.9 reserveMiB=16.0
+[cache-soak] phase=steady seconds=95.1 complete=9204 abort=44049 hit=29297 miss=23975 eviction=1256 heapMiB=158.6 postGcMiB=126.6 reserveMiB=64.0
+[cache-soak] phase=steady seconds=100.0 complete=9728 abort=46622 hit=31001 miss=25369 eviction=1323 heapMiB=196.3 postGcMiB=153.3 reserveMiB=64.0
+[cache-soak] phase=steady seconds=105.0 complete=10261 abort=49266 hit=32749 miss=26798 eviction=1390 heapMiB=128.2 postGcMiB=98.2 reserveMiB=64.0
+[cache-soak] phase=steady seconds=110.0 complete=10816 abort=51982 hit=34545 miss=28275 eviction=1467 heapMiB=228.6 postGcMiB=127.6 reserveMiB=64.0
+[cache-soak] phase=steady seconds=115.1 complete=11371 abort=54664 hit=36327 miss=29728 eviction=1538 heapMiB=129.8 postGcMiB=129.8 reserveMiB=48.0
+[cache-soak] phase=steady seconds=120.1 complete=11904 abort=57404 hit=38121 miss=31209 eviction=1610 heapMiB=145.6 postGcMiB=96.6 reserveMiB=48.0
+[cache-soak] phase=steady seconds=125.0 complete=12379 abort=59826 hit=39707 miss=32518 eviction=1673 heapMiB=308.0 postGcMiB=178.0 reserveMiB=64.0
+[cache-soak] phase=steady seconds=130.0 complete=12898 abort=62365 hit=41385 miss=33897 eviction=1744 heapMiB=310.8 postGcMiB=152.8 reserveMiB=48.0
+[cache-soak] phase=steady seconds=135.1 complete=13440 abort=65067 hit=43167 miss=35360 eviction=1823 heapMiB=339.3 postGcMiB=166.3 reserveMiB=64.0
+[cache-soak] phase=steady seconds=140.1 complete=13964 abort=67710 hit=44907 miss=36788 eviction=1892 heapMiB=303.8 postGcMiB=92.8 reserveMiB=64.0
+[cache-soak] phase=steady seconds=145.0 complete=14456 abort=70166 hit=46525 miss=38118 eviction=1959 heapMiB=160.3 postGcMiB=151.3 reserveMiB=32.0
+[cache-soak] phase=steady seconds=150.1 complete=14977 abort=72700 hit=48203 miss=39493 eviction=2030 heapMiB=278.6 postGcMiB=160.6 reserveMiB=32.0
+[cache-soak] phase=steady seconds=155.1 complete=15514 abort=75298 hit=49929 miss=40903 eviction=2104 heapMiB=336.3 postGcMiB=176.3 reserveMiB=64.0
+[cache-soak] phase=steady seconds=160.0 complete=16055 abort=77915 hit=51668 miss=42323 eviction=2181 heapMiB=155.6 postGcMiB=119.6 reserveMiB=32.0
+[cache-soak] phase=steady seconds=165.0 complete=16552 abort=80411 hit=53309 miss=43674 eviction=2254 heapMiB=281.0 postGcMiB=114.0 reserveMiB=48.0
+[cache-soak] phase=steady seconds=170.1 complete=17073 abort=83093 hit=55060 miss=45127 eviction=2323 heapMiB=322.2 postGcMiB=167.2 reserveMiB=64.0
+[cache-soak] phase=steady seconds=175.1 complete=17567 abort=85597 hit=56709 miss=46476 eviction=2394 heapMiB=173.9 postGcMiB=156.9 reserveMiB=48.0
+[cache-soak] phase=steady seconds=180.0 complete=18052 abort=88075 hit=58331 miss=47817 eviction=2460 heapMiB=203.1 postGcMiB=140.1 reserveMiB=64.0
+[cache-soak] phase=steady seconds=185.0 complete=18531 abort=90475 hit=59907 miss=49120 eviction=2526 heapMiB=136.9 postGcMiB=113.9 reserveMiB=64.0
+[cache-soak] phase=steady seconds=190.1 complete=19009 abort=92860 hit=61481 miss=50408 eviction=2586 heapMiB=185.3 postGcMiB=144.3 reserveMiB=32.0
+[cache-soak] phase=steady seconds=195.0 complete=19495 abort=95354 hit=63115 miss=51755 eviction=2655 heapMiB=252.1 postGcMiB=144.1 reserveMiB=32.0
+[cache-soak] phase=steady seconds=200.0 complete=19979 abort=97751 hit=64696 miss=53055 eviction=2724 heapMiB=258.8 postGcMiB=150.8 reserveMiB=16.0
+[cache-soak] phase=steady seconds=205.1 complete=20496 abort=100342 hit=66401 miss=54459 eviction=2794 heapMiB=154.3 postGcMiB=154.3 reserveMiB=64.0
+[cache-soak] phase=steady seconds=210.1 complete=21043 abort=103154 hit=68241 miss=55977 eviction=2871 heapMiB=300.4 postGcMiB=137.4 reserveMiB=64.0
+[cache-soak] phase=steady seconds=215.1 complete=21559 abort=105770 hit=69960 miss=57390 eviction=2942 heapMiB=262.2 postGcMiB=164.2 reserveMiB=0.0
+[cache-soak] phase=steady seconds=220.0 complete=22086 abort=108436 hit=71708 miss=58836 eviction=3010 heapMiB=186.0 postGcMiB=131.0 reserveMiB=48.0
+[cache-soak] phase=steady seconds=225.0 complete=22633 abort=111156 hit=73500 miss=60309 eviction=3089 heapMiB=282.1 postGcMiB=163.1 reserveMiB=48.0
+[cache-soak] phase=steady seconds=230.1 complete=23201 abort=113985 hit=75367 miss=61838 eviction=3163 heapMiB=212.6 postGcMiB=161.6 reserveMiB=48.0
+[cache-soak] phase=steady seconds=235.1 complete=23731 abort=116670 hit=77130 miss=63291 eviction=3245 heapMiB=231.0 postGcMiB=96.0 reserveMiB=48.0
+[cache-soak] phase=steady seconds=240.1 complete=24285 abort=119484 hit=78979 miss=64811 eviction=3316 heapMiB=165.2 postGcMiB=149.2 reserveMiB=16.0
+[cache-soak] phase=steady seconds=245.0 complete=24814 abort=122106 hit=80707 miss=66235 eviction=3385 heapMiB=156.5 postGcMiB=125.5 reserveMiB=48.0
+[cache-soak] phase=steady seconds=250.0 complete=25348 abort=124841 hit=82500 miss=67709 eviction=3468 heapMiB=268.0 postGcMiB=138.0 reserveMiB=48.0
+[cache-soak] phase=steady seconds=255.1 complete=25848 abort=127344 hit=84145 miss=69067 eviction=3532 heapMiB=192.1 postGcMiB=125.1 reserveMiB=64.0
+[cache-soak] phase=steady seconds=260.1 complete=26347 abort=129839 hit=85789 miss=70418 eviction=3595 heapMiB=215.9 postGcMiB=107.9 reserveMiB=48.0
+[cache-soak] phase=steady seconds=265.0 complete=26825 abort=132191 hit=87347 miss=71691 eviction=3663 heapMiB=244.6 postGcMiB=155.6 reserveMiB=0.0
+[cache-soak] phase=steady seconds=270.0 complete=27293 abort=134417 hit=88830 miss=72900 eviction=3719 heapMiB=165.8 postGcMiB=123.8 reserveMiB=32.0
+[cache-soak] phase=steady seconds=275.1 complete=27784 abort=136748 hit=90385 miss=74169 eviction=3785 heapMiB=165.6 postGcMiB=113.6 reserveMiB=48.0
+[cache-soak] phase=steady seconds=280.1 complete=28292 abort=139224 hit=92023 miss=75513 eviction=3847 heapMiB=152.3 postGcMiB=118.3 reserveMiB=48.0
+[cache-soak] phase=steady seconds=285.0 complete=28811 abort=141733 hit=93687 miss=76875 eviction=3923 heapMiB=302.6 postGcMiB=188.6 reserveMiB=48.0
+[cache-soak] phase=steady seconds=290.0 complete=29332 abort=144414 hit=95444 miss=78320 eviction=3993 heapMiB=217.2 postGcMiB=106.2 reserveMiB=64.0
+[cache-soak] phase=steady seconds=295.0 complete=29877 abort=147100 hit=97217 miss=79781 eviction=4062 heapMiB=297.5 postGcMiB=103.5 reserveMiB=64.0
+[cache-soak] phase=steady seconds=300.1 complete=30380 abort=149604 hit=98868 miss=81136 eviction=4125 heapMiB=207.1 postGcMiB=151.1 reserveMiB=64.0
+[cache-soak] phase=steady seconds=305.1 complete=30889 abort=152048 hit=100497 miss=82462 eviction=4189 heapMiB=127.6 postGcMiB=114.6 reserveMiB=32.0
+[cache-soak] phase=steady seconds=310.0 complete=31343 abort=154242 hit=101954 miss=83651 eviction=4241 heapMiB=233.8 postGcMiB=143.8 reserveMiB=48.0
+[cache-soak] phase=steady seconds=315.1 complete=31818 abort=156476 hit=103446 miss=84869 eviction=4302 heapMiB=315.9 postGcMiB=181.9 reserveMiB=64.0
+[cache-soak] phase=steady seconds=320.1 complete=32334 abort=158956 hit=105097 miss=86215 eviction=4371 heapMiB=204.9 postGcMiB=122.9 reserveMiB=32.0
+[cache-soak] phase=steady seconds=325.1 complete=32848 abort=161396 hit=106722 miss=87541 eviction=4436 heapMiB=286.9 postGcMiB=149.9 reserveMiB=48.0
+[cache-soak] phase=steady seconds=330.0 complete=33351 abort=163828 hit=108340 miss=88861 eviction=4502 heapMiB=153.9 postGcMiB=136.9 reserveMiB=0.0
+[cache-soak] phase=steady seconds=335.0 complete=33889 abort=166353 hit=110026 miss=90234 eviction=4571 heapMiB=223.9 postGcMiB=101.9 reserveMiB=48.0
+[cache-soak] phase=steady seconds=340.1 complete=34436 abort=168972 hit=111771 miss=91657 eviction=4647 heapMiB=179.4 postGcMiB=161.4 reserveMiB=32.0
+[cache-soak] phase=steady seconds=345.0 complete=34964 abort=171520 hit=113462 miss=93043 eviction=4721 heapMiB=180.8 postGcMiB=159.8 reserveMiB=32.0
+[cache-soak] phase=steady seconds=350.0 complete=35511 abort=174298 hit=115285 miss=94545 eviction=4797 heapMiB=184.1 postGcMiB=155.1 reserveMiB=64.0
+[cache-soak] phase=steady seconds=355.0 complete=36079 abort=176949 hit=117065 miss=95985 eviction=4874 heapMiB=208.2 postGcMiB=174.2 reserveMiB=32.0
+[cache-soak] phase=steady seconds=360.1 complete=36633 abort=179742 hit=118898 miss=97497 eviction=4951 heapMiB=182.5 postGcMiB=108.5 reserveMiB=64.0
+[cache-soak] phase=steady seconds=365.1 complete=37193 abort=182423 hit=120681 miss=98954 eviction=5026 heapMiB=251.9 postGcMiB=109.9 reserveMiB=48.0
+[cache-soak] phase=steady seconds=370.0 complete=37770 abort=185080 hit=122471 miss=100399 eviction=5110 heapMiB=227.9 postGcMiB=199.9 reserveMiB=48.0
+[cache-soak] phase=steady seconds=375.1 complete=38309 abort=187570 hit=124142 miss=101759 eviction=5192 heapMiB=172.1 postGcMiB=164.1 reserveMiB=64.0
+[cache-soak] phase=steady seconds=380.1 complete=38871 abort=190308 hit=125956 miss=103242 eviction=5264 heapMiB=186.8 postGcMiB=137.8 reserveMiB=64.0
+[cache-soak] phase=steady seconds=385.1 complete=39460 abort=193098 hit=127821 miss=104757 eviction=5348 heapMiB=239.5 postGcMiB=92.5 reserveMiB=32.0
+[cache-soak] phase=steady seconds=390.0 complete=40010 abort=195770 hit=129594 miss=106208 eviction=5423 heapMiB=310.7 postGcMiB=134.7 reserveMiB=64.0
+[cache-soak] phase=steady seconds=395.0 complete=40573 abort=198516 hit=131412 miss=107698 eviction=5500 heapMiB=242.9 postGcMiB=151.9 reserveMiB=32.0
+[cache-soak] phase=steady seconds=400.1 complete=41109 abort=201056 hit=133105 miss=109080 eviction=5579 heapMiB=200.5 postGcMiB=90.5 reserveMiB=48.0
+[cache-soak] phase=steady seconds=405.1 complete=41660 abort=203676 hit=134852 miss=110500 eviction=5656 heapMiB=207.8 postGcMiB=101.8 reserveMiB=64.0
+[cache-soak] phase=steady seconds=410.1 complete=42198 abort=206298 hit=136589 miss=111927 eviction=5734 heapMiB=226.5 postGcMiB=164.5 reserveMiB=48.0
+[cache-soak] phase=steady seconds=415.0 complete=42729 abort=208849 hit=138287 miss=113312 eviction=5805 heapMiB=175.4 postGcMiB=163.4 reserveMiB=48.0
+[cache-soak] phase=steady seconds=420.0 complete=43271 abort=211462 hit=140027 miss=114727 eviction=5877 heapMiB=347.9 postGcMiB=163.9 reserveMiB=32.0
+[cache-soak] phase=steady seconds=425.1 complete=43796 abort=213927 hit=141675 miss=116069 eviction=5950 heapMiB=184.9 postGcMiB=100.9 reserveMiB=64.0
+[cache-soak] phase=steady seconds=430.1 complete=44289 abort=216388 hit=143293 miss=117403 eviction=6010 heapMiB=240.8 postGcMiB=191.8 reserveMiB=64.0
+[cache-soak] phase=steady seconds=435.0 complete=44823 abort=218938 hit=144993 miss=118790 eviction=6088 heapMiB=150.2 postGcMiB=140.3 reserveMiB=64.0
+[cache-soak] phase=steady seconds=440.0 complete=45373 abort=221619 hit=146771 miss=120242 eviction=6165 heapMiB=238.9 postGcMiB=141.9 reserveMiB=48.0
+[cache-soak] phase=steady seconds=445.1 complete=45910 abort=224253 hit=148513 miss=121669 eviction=6245 heapMiB=329.5 postGcMiB=180.5 reserveMiB=32.0
+[cache-soak] phase=steady seconds=450.1 complete=46436 abort=226889 hit=150247 miss=123098 eviction=6314 heapMiB=141.7 postGcMiB=130.7 reserveMiB=64.0
+[cache-soak] phase=steady seconds=455.0 complete=46962 abort=229476 hit=151958 miss=124500 eviction=6386 heapMiB=250.1 postGcMiB=185.1 reserveMiB=64.0
+[cache-soak] phase=steady seconds=460.0 complete=47531 abort=232139 hit=153742 miss=125949 eviction=6457 heapMiB=295.2 postGcMiB=179.2 reserveMiB=48.0
+[cache-soak] phase=steady seconds=465.0 complete=48079 abort=234742 hit=155477 miss=127364 eviction=6529 heapMiB=194.4 postGcMiB=123.4 reserveMiB=64.0
+[cache-soak] phase=steady seconds=470.1 complete=48602 abort=237276 hit=157161 miss=128737 eviction=6604 heapMiB=228.4 postGcMiB=144.4 reserveMiB=16.0
+[cache-soak] phase=steady seconds=475.1 complete=49152 abort=239991 hit=158956 miss=130209 eviction=6671 heapMiB=244.9 postGcMiB=178.9 reserveMiB=64.0
+[cache-soak] phase=steady seconds=480.0 complete=49692 abort=242685 hit=160727 miss=131670 eviction=6748 heapMiB=125.0 postGcMiB=102.0 reserveMiB=64.0
+[cache-soak] phase=steady seconds=485.0 complete=50236 abort=245240 hit=162438 miss=133059 eviction=6817 heapMiB=155.9 postGcMiB=121.9 reserveMiB=64.0
+[cache-soak] phase=steady seconds=490.0 complete=50798 abort=248036 hit=164281 miss=134574 eviction=6894 heapMiB=262.1 postGcMiB=167.1 reserveMiB=48.0
+[cache-soak] phase=steady seconds=495.1 complete=51375 abort=250838 hit=166141 miss=136092 eviction=6965 heapMiB=239.0 postGcMiB=198.0 reserveMiB=64.0
+[cache-soak] phase=steady seconds=500.1 complete=51943 abort=253582 hit=167962 miss=137584 eviction=7039 heapMiB=180.0 postGcMiB=159.0 reserveMiB=48.0
+[cache-soak] phase=steady seconds=505.0 complete=52479 abort=256159 hit=169677 miss=138982 eviction=7111 heapMiB=268.8 postGcMiB=165.8 reserveMiB=32.0
+[cache-soak] phase=steady seconds=510.0 complete=53067 abort=258924 hit=171525 miss=140486 eviction=7197 heapMiB=141.6 postGcMiB=123.6 reserveMiB=48.0
+[cache-soak] phase=steady seconds=515.1 complete=53618 abort=261549 hit=173274 miss=141914 eviction=7268 heapMiB=303.6 postGcMiB=171.6 reserveMiB=48.0
+[cache-soak] phase=steady seconds=520.1 complete=54164 abort=264208 hit=175038 miss=143352 eviction=7336 heapMiB=298.4 postGcMiB=137.4 reserveMiB=64.0
+[cache-soak] phase=steady seconds=525.0 complete=54744 abort=266973 hit=176879 miss=144855 eviction=7410 heapMiB=161.3 postGcMiB=144.3 reserveMiB=64.0
+[cache-soak] phase=steady seconds=530.0 complete=55300 abort=269667 hit=178667 miss=146320 eviction=7483 heapMiB=158.5 postGcMiB=137.5 reserveMiB=64.0
+[cache-soak] phase=steady seconds=535.1 complete=55840 abort=272252 hit=180391 miss=147723 eviction=7559 heapMiB=243.7 postGcMiB=185.7 reserveMiB=16.0
+[cache-soak] phase=steady seconds=540.0 complete=56415 abort=275003 hit=182222 miss=149216 eviction=7638 heapMiB=208.9 postGcMiB=147.9 reserveMiB=64.0
+[cache-soak] phase=steady seconds=545.0 complete=56989 abort=277725 hit=184036 miss=150698 eviction=7710 heapMiB=191.7 postGcMiB=167.7 reserveMiB=64.0
+[cache-soak] phase=steady seconds=550.0 complete=57580 abort=280624 hit=185957 miss=152267 eviction=7785 heapMiB=264.4 postGcMiB=177.4 reserveMiB=16.0
+[cache-soak] phase=steady seconds=555.1 complete=58137 abort=283347 hit=187761 miss=153743 eviction=7863 heapMiB=191.7 postGcMiB=162.7 reserveMiB=64.0
+[cache-soak] phase=steady seconds=560.1 complete=58716 abort=286246 hit=189670 miss=155313 eviction=7940 heapMiB=301.1 postGcMiB=155.1 reserveMiB=32.0
+[cache-soak] phase=steady seconds=565.0 complete=59274 abort=289075 hit=191525 miss=156844 eviction=8014 heapMiB=228.9 postGcMiB=153.9 reserveMiB=64.0
+[cache-soak] phase=steady seconds=570.0 complete=59878 abort=292002 hit=193472 miss=158430 eviction=8090 heapMiB=314.7 postGcMiB=165.7 reserveMiB=64.0
+[cache-soak] phase=steady seconds=575.0 complete=60464 abort=294858 hit=195362 miss=159980 eviction=8169 heapMiB=180.8 postGcMiB=153.8 reserveMiB=48.0
+[cache-soak] phase=steady seconds=580.1 complete=61075 abort=297694 hit=197267 miss=161522 eviction=8256 heapMiB=165.0 postGcMiB=136.0 reserveMiB=16.0
+[cache-soak] phase=steady seconds=585.1 complete=61659 abort=300631 hit=199200 miss=163109 eviction=8332 heapMiB=292.7 postGcMiB=89.7 reserveMiB=32.0
+[cache-soak] phase=steady seconds=590.0 complete=62278 abort=303496 hit=201120 miss=164672 eviction=8399 heapMiB=147.7 postGcMiB=131.7 reserveMiB=48.0
+[cache-soak] phase=steady seconds=595.0 complete=62820 abort=306238 hit=202920 miss=166157 eviction=8483 heapMiB=142.4 postGcMiB=124.4 reserveMiB=48.0
+[cache-soak] phase=steady seconds=600.1 complete=63376 abort=308845 hit=204669 miss=167573 eviction=8550 heapMiB=144.0 postGcMiB=129.0 reserveMiB=48.0
+[cache-soak] phase=steady seconds=605.1 complete=63939 abort=311597 hit=206489 miss=169069 eviction=8631 heapMiB=209.2 postGcMiB=159.2 reserveMiB=48.0
+[cache-soak] phase=steady seconds=610.0 complete=64504 abort=314367 hit=208319 miss=170571 eviction=8704 heapMiB=149.4 postGcMiB=107.4 reserveMiB=32.0
+[cache-soak] phase=steady seconds=615.0 complete=65093 abort=317269 hit=210242 miss=172140 eviction=8770 heapMiB=244.6 postGcMiB=101.6 reserveMiB=64.0
+[cache-soak] phase=steady seconds=620.1 complete=65656 abort=320152 hit=212129 miss=173701 eviction=8837 heapMiB=145.3 postGcMiB=134.3 reserveMiB=32.0
+[cache-soak] phase=steady seconds=625.1 complete=66220 abort=322863 hit=213932 miss=175172 eviction=8912 heapMiB=252.8 postGcMiB=147.8 reserveMiB=48.0
+[cache-soak] phase=measurement-end seconds=630.1 complete=66807 abort=325655 hit=215784 miss=176684 eviction=8990 heapMiB=172.4 postGcMiB=171.4 reserveMiB=0.0
+12:01:10.397 [main] INFO org.eclipse.jetty.server.Server -- Stopped oejs.Server@68d279ec{STOPPING}[12.1.12,sto=0]
+12:01:10.401 [main] INFO org.eclipse.jetty.server.AbstractConnector -- Stopped oejs.ServerConnector@6853425f{HTTP/1.1, (http/1.1)}{127.0.0.1:0}
+12:01:10.404 [main] INFO org.eclipse.jetty.ee11.servlet.ServletContextHandler -- Stopped oeje11s.ServletContextHandler@6cb6decd{ROOT,/,b=null,a=AVAILABLE,h=oeje11s.ServletHandler@c7045b9{STOPPED}}
+[cache-soak] success=true completed=66811 expectedAborts=325655 failures=0 report=/tmp/nettypet-cache-soak-e8f4bb0/report.json
+
+[Incubating] Problems report is available at: file:///workspace/NettyPet/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 11m
+41 actionable tasks: 4 executed, 37 up-to-date

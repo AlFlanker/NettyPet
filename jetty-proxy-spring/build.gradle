@@ -1,0 +1,32 @@
+plugins { id 'maven-publish' }
+
+dependencies {
+    api platform('org.springframework.boot:spring-boot-dependencies:4.1.1')
+    api project(':jetty-proxy')
+    api 'org.springframework:spring-context'
+    api 'org.springframework:spring-web'
+    api 'org.springframework.boot:spring-boot'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'jakarta.servlet:jakarta.servlet-api'
+}
+
+java { withSourcesJar() }
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            pom {
+                name = 'Jetty Proxy Spring Integration'
+                description = 'Explicit Spring configuration for Jetty Proxy, without application routes or server settings'
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = 'verification'
+            url = layout.buildDirectory.dir('repository')
+        }
+    }
+}

@@ -6,11 +6,11 @@ digraph Architecture {
   edge [color="#417C89", penwidth=1.2, arrowsize=0.7, fontname="Noto Sans", fontsize=12];
 
   client [label="Клиент\nHTTP-запрос"];
-  jetty [label="Jetty :8081\nмаршрутизация"];
-  local [label="MVC /local\nLocalController\nlocal()"];
-  servlet [label="/proxy и /proxy/*\nJettyProxyServlet\nservice()", fillcolor="#E0F2EF", color="#2D827B"];
-  http [label="Jetty HttpClient\nHTTP/1.1", fillcolor="#E0F2EF", color="#2D827B"];
-  upstream [label="Upstream :9000\nфиксированный URI"];
+  jetty [label="Host / demo\nJetty Filter chain"];
+  local [label="Local MVC\nили resource loader\nbounded fetch"];
+  servlet [label="Application Filter\nвыбранный handler\nSpring adapter optional", fillcolor="#E0F2EF", color="#2D827B"];
+  http [label="Core JAR\nEngine / FetchClient\nshared HttpClient", fillcolor="#E0F2EF", color="#2D827B"];
+  upstream [label="HTTP(S) upstream\ntarget из plan"];
 
   { rank=same; client; upstream; }
   { rank=same; jetty; http; }
@@ -22,5 +22,6 @@ digraph Architecture {
   jetty -> local;
   jetty -> servlet;
   servlet -> http [constraint=false];
+  local -> http [constraint=false];
   http -> upstream [constraint=false];
 }

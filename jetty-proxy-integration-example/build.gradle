@@ -1,0 +1,89 @@
+import java.util.jar.JarFile
+
+plugins {
+    id 'org.springframework.boot'
+}
+
+// Compile the actual legacy cache sources, not a test copy. The rest of the
+// private portal example is intentionally outside this application's build.
+sourceSets {
+    legacyCacheFixture {
+        java {
+            srcDir rootProject.file('examples')
+            include 'proxy/caching/*.java'
+        }
+    }
+}
+
+configurations {
+    legacyCacheFixtureImplementation.extendsFrom implementation
+}
+
+dependencies {
+    implementation platform('org.springframework.boot:spring-boot-dependencies:4.1.1')
+    implementation enforcedPlatform('io.netty:netty-bom:4.2.19.Final')
+    implementation project(':jetty-proxy')
+    implementation project(':jetty-proxy-spring')
+    implementation project(':proxy')
+    implementation('org.springframework.boot:spring-boot-starter-webmvc') {
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-tomcat'
+    }
+    implementation 'org.springframework.boot:spring-boot-starter-jetty'
+    legacyCacheFixtureImplementation 'com.google.guava:guava:33.4.8-jre'
+    testImplementation sourceSets.legacyCacheFixture.output
+    testImplementation 'com.google.guava:guava:33.4.8-jre'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+tasks.named('bootJar') { archiveFileName = 'jetty-proxy-integration-example-1.0.0.jar' }
+tasks.named('jar') { enabled = false }
+
+tasks.register('verifyLibraryArtifacts') {
+    dependsOn ':jetty-proxy:jar', ':jetty-proxy-spring:jar'
+    inputs.files(configurations.runtimeClasspath)
+    doLast {
+        def libraries = ['jetty-proxy': 'JettyProxyEngine',
+                         'jetty-proxy-spring': 'JettyProxyClientConfiguration']
+        libraries.each { module, entryClass ->
+            def artifact = configurations.runtimeClasspath.resolvedConfiguration.resolvedArtifacts.find {
+                it.moduleVersion.id.group == 'dev.example' && it.name == module
+            }
+            if (artifact == null || !artifact.file.isFile())
+                throw new GradleException("Missing ordinary library JAR: ${module}")
+            new JarFile(artifact.file).withCloseable { jar ->
+                if (jar.getEntry("dev/example/jettyclient/proxy/${entryClass}.class") == null)
+                    throw new GradleException("${module} does not expose classes at the ordinary JAR root")
+                def names = jar.entries().collect { it.name }
+                if (names.any { it.startsWith('BOOT-INF/') || it.endsWith('application.yml') })
+                    throw new GradleException("${module} contains executable/demo packaging or application settings")
+            }
+        }
+        if (configurations.runtimeClasspath.files.any { it.name.startsWith('jetty-client-example-') })
+            throw new GradleException('The integration host must not depend on the demo executable')
+    }
+}
+
+tasks.named('check') { dependsOn tasks.named('verifyLibraryArtifacts') }
+tasks.named('bootJar') { dependsOn tasks.named('verifyLibraryArtifacts') }
+
+// Opt-in sustained validation; normal build/test does not run a ten-minute load test.
+tasks.register('cacheSoak', JavaExec) {
+    group = 'verification'
+    description = 'Exercise the real HTTP cache path with eviction, slow clients and heap/GC sampling'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'dev.example.integrationhost.CacheSoakRunner'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+    minHeapSize = '256m'
+    maxHeapSize = '768m'
+    jvmArgs '-XX:+UseG1GC'
+    if (providers.gradleProperty('cacheSoakFailureHeap').isPresent()) {
+        systemProperty 'cacheSoak.dumpHeapOnFailure', providers.gradleProperty('cacheSoakFailureHeap').get()
+    }
+    args providers.gradleProperty('cacheSoakWarmupSeconds').getOrElse('30'),
+            providers.gradleProperty('cacheSoakSeconds').getOrElse('600'),
+            providers.gradleProperty('cacheSoakClients').getOrElse('20'),
+            providers.gradleProperty('cacheSoakOutput').getOrElse(
+                    layout.buildDirectory.dir('reports/cache-soak').get().asFile.absolutePath),
+            providers.gradleProperty('cacheSoakCommit').getOrElse('working-tree')
+}

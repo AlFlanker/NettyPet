@@ -3,6 +3,10 @@
 `build_guide.py` — совместимый wrapper над общим [сборщиком](../../docs/pdf_guide.py).
 Тот же код собирает [гайд Jetty + Netty](../../docs/jetty-netty/README.md).
 
+Текущий гайд охватывает core `jetty-proxy`, необязательный Spring adapter,
+standalone demo и отдельный host-пример. Восемь диаграмм включают streaming
+и отдельный bounded fetch/loader; library JAR не содержит настройки demo.
+
 Исходник — `guide.md`. Ровно 15 разделов отделяются отдельной строкой
 `<!-- pagebreak -->`; каждый раздел начинается с `## Заголовок`. Один раздел
 соответствует одному портретному листу A4. `guide.css` задаёт основной текст 10.5pt,

@@ -5,10 +5,10 @@ digraph Startup {
         fontcolor="#15344B", fillcolor="#EFF6FA", color="#45788F", penwidth=1.1, margin="0.14,0.09"];
   edge [color="#417C89", penwidth=1.2, arrowsize=0.7, fontname="Noto Sans", fontsize=12];
 
-  main [label="main()\nSpringApplication.run()\nbinding свойств"];
-  client [label="jettyHttpClient()\nclient.start()\nwhitelist обработчиков", fillcolor="#E0F2EF", color="#2D827B"];
-  servlet [label="jettyProxyServlet()\norderedStream()\nсписок customizers"];
-  registration [label="jettyProxyServletRegistration()\n/proxy и /proxy/*\nasyncSupported = true", fillcolor="#E0F2EF", color="#2D827B"];
+  main [label="Host/demo main\nexplicit @Import\njetty.proxy binding"];
+  client [label="Factory-owned client\npre-start customizer\nTLS → start → proxy policy", fillcolor="#E0F2EF", color="#2D827B"];
+  servlet [label="Spring adapter\nqualified engine/fetch\nраздельные budgets"];
+  registration [label="Host-owned Filter\nhandler / routes\nREQUEST + async", fillcolor="#E0F2EF", color="#2D827B"];
 
   { rank=same; main; servlet; }
   { rank=same; client; registration; }

@@ -1,0 +1,43 @@
+{
+  "head": "294f548",
+  "jar_sha256": "0b3b21205bbb9ce9f0734c6e5a87e40fe56e35b7ad0974b9968fe6232310a950",
+  "guarded": {
+    "status": 403,
+    "headers": {
+      "Date": "Mon, 26 Oct 2026 09:38:41 GMT",
+      "Cache-Control": "no-store",
+      "Content-Length": "0",
+      "Connection": "close"
+    },
+    "body": ""
+  },
+  "origin_hits_after_guard": 0,
+  "loader_same_resource": {
+    "status": 200,
+    "headers": {
+      "Date": "Mon, 26 Oct 2026 09:38:41 GMT",
+      "Content-Type": "text/plain;charset=utf-8",
+      "Content-Length": "18"
+    },
+    "body": "protected-resource"
+  },
+  "loader_range": {
+    "status": 206,
+    "headers": {
+      "Date": "Mon, 26 Oct 2026 09:38:41 GMT",
+      "Content-Type": "text/plain;charset=utf-8",
+      "Content-Length": "2"
+    },
+    "body": "ab"
+  },
+  "origin_requests": [
+    {
+      "path": "/forbidden",
+      "range": null
+    },
+    {
+      "path": "/bytes",
+      "range": "bytes=0-1"
+    }
+  ]
+}

@@ -1,0 +1,321 @@
+package dev.example.jettyclient.proxy.policies;
+
+import dev.example.jettyclient.proxy.ProxyRequestMetadata;
+import dev.example.jettyclient.proxy.ProxyResponseBody;
+import dev.example.jettyclient.proxy.ProxyResponseBodyPolicy;
+import dev.example.jettyclient.proxy.ProxyResponseMetadata;
+import java.io.ByteArrayOutputStream;
+import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class LinkRewritePolicyTest {
+    private static final URI BACKEND = URI.create("http://backend.example/internal");
+    private static final URI FRONTEND = URI.create("https://portal.example/apps/service");
+    private static final long LIMIT = 16 * 1024 * 1024;
+    private static final ProxyRequestMetadata REQUEST = new ProxyRequestMetadata("GET", BACKEND, Map.of());
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "<a href=\"/main.css\">main</a>",
+            "<a href='../js/main.js'>js</a><a href=|./other|>other</a>",
+            "<a href='//cdn.example/x'>cdn</a><a href=\"https://outside.example/a\">outside</a>",
+            "<base href='/assets/'><a href='./other'>relative</a>",
+            "<base\nhref='/assets/'><a href='../other'>relative</a>",
+            "<base href=\n'/assets/'><a href='./other'>relative</a>",
+            "<base href=x\n<base href='/later'><a href='./other'>later base</a>",
+            "<BASE href='/assets/'><A HREF='/UPPER'><a href='./other'>case-sensitive</a>",
+            "<a href='/a\nb'><a href='./a\rb'><a href='/a\u2028b'><a href='/a\u0085b'>line ends</a>",
+            "<p>Привет 🌍</p><a href='/стиль.css'><a href='./脚本.js'>unicode</a>",
+            "<form class=\"test\" action=\"/submit\"><input></form>",
+            "<form\nclass=\"test\"\naction=\"relative\"\nmethod=\"POST\">test</form>",
+            "<form action=\"\"></form><form action=\"https://outside.example/action\">legacy prefix</form>",
+            "<a href=\"/\"><a href='../'>empty tails follow the legacy regex</a>",
+            "const url='http://backend.example/internal/api';<a href='/main'>main</a>"
+    })
+    void matchesTheLegacyRegexRulesAcrossOneByteSegments(String source) throws Exception {
+        LinkRewritePolicy policy = policy(LIMIT, LIMIT);
+        byte[] bytes = source.getBytes(StandardCharsets.UTF_8);
+        ProxyResponseBody rewritten = rewrite(policy, body(bytes, 1), "text/html; charset=UTF-8");
+        assertEquals(reference(source, true), new String(bytes(rewritten), StandardCharsets.UTF_8));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"text/css", "text/javascript", "application/javascript", "application/x-javascript"})
+    void cssAndJavascriptReplaceAbsoluteBackendUrlsWithoutTreatingTheirTextAsHtml(String mime) throws Exception {
+        String source = "href='/unchanged' url(http://backend.example/internal/a.css) \"http://backend.example/internal/b.js\"";
+        ProxyResponseBody rewritten = rewrite(policy(LIMIT, LIMIT), body(source.getBytes(StandardCharsets.UTF_8), 7), mime);
+        assertEquals(reference(source, false), new String(bytes(rewritten), StandardCharsets.UTF_8));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"ISO-8859-1", "windows-1251", "US-ASCII"})
+    void asciiCompatibleSingleByteCharsetsKeepByteModeAndBorrowUnchangedRanges(String name) throws Exception {
+        Charset charset = Charset.forName(name);
+        String source = "before <a href='/main'>body</a> http://backend.example/internal/api";
+        byte[] inputBytes = source.getBytes(charset);
+        ProxyResponseBody input = body(inputBytes, 5);
+        ProxyResponseBody output = rewrite(policy(LIMIT, LIMIT), input, "text/html; charset=\"" + name + "\"");
+        assertEquals(reference(source, true), new String(bytes(output), charset));
+        inputBytes[0] = 'B';
+        assertEquals('B', output.buffers().getFirst().get(0), "Unchanged ranges must share the input memory");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"UTF-16", "UTF-16BE", "UTF-16LE"})
+    void nonAsciiCompatibleCharsetsUseTheBoundedFallbackAndMatchLegacyTextRules(String name) throws Exception {
+        Charset charset = Charset.forName(name);
+        String source = "Привет <a href='/main'>🌍</a><form action=\"/post\">body</form> http://backend.example/internal/api";
+        ProxyResponseBody output = rewrite(policy(LIMIT, LIMIT), body(source.getBytes(charset), 3),
+                "text/html; charset=" + name);
+        assertEquals(reference(source, true), new String(bytes(output), charset));
+    }
+
+    @Test
+    void unknownCharsetMatchesTheOldUtf8DefaultAndQuotedOtherParametersDoNotChangeCharset() throws Exception {
+        String source = "Привет <a href='/main'>link</a>";
+        for (String type : List.of("text/html; charset=not-a-real-charset", "text/html; note=\"; charset=UTF-16\"")) {
+            ProxyResponseBody output = rewrite(policy(LIMIT, LIMIT), body(source.getBytes(StandardCharsets.UTF_8), 2), type);
+            assertEquals(reference(source, true), new String(bytes(output), StandardCharsets.UTF_8));
+        }
+    }
+
+    @Test
+    void preservesAnUnchangedEightMebibyteDirectBodyWithoutWholeBodyCopies() throws Exception {
+        List<ByteBuffer> direct = new ArrayList<>();
+        for (int i = 0; i < 128; i++) {
+            ByteBuffer segment = ByteBuffer.allocateDirect(65_536);
+            while (segment.hasRemaining()) segment.put((byte)'x');
+            segment.flip();
+            direct.add(segment);
+        }
+        ProxyResponseBody input = ProxyResponseBody.of(direct);
+        ProxyResponseBody output = rewrite(policy(LIMIT, LIMIT), input, "text/html; charset=UTF-8");
+        assertSame(input, output, "No edit must return the original body container");
+        assertEquals(8 * 1024 * 1024, output.length());
+        assertTrue(output.buffers().stream().allMatch(ByteBuffer::isDirect));
+        assertTrue(direct.stream().allMatch(buffer -> buffer.position() == 0));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"UTF-8", "UTF-16BE"})
+    void malformedRepeatedBaseAndFormPrefixesDoNotRetryTheWholeRemainingDocument(String charsetName) {
+        Charset charset = Charset.forName(charsetName);
+        String source = "<base href=x <form ".repeat(60_000);
+        byte[] bytes = source.getBytes(charset);
+        assertTimeoutPreemptively(Duration.ofSeconds(3), () -> {
+            ProxyResponseBody result = rewrite(policy(LIMIT, LIMIT), body(bytes, 65_536),
+                    "text/html; charset=" + charsetName);
+            assertArrayEquals(bytes, bytes(result));
+        });
+    }
+
+    @Test
+    void binaryAndUnselectedMimeTypesDoNotEnterAWholeBodyRewrite() {
+        LinkRewritePolicy policy = policy(LIMIT, LIMIT);
+        for (String type : List.of("application/octet-stream", "image/png", "text/plain", "application/json"))
+            assertNull(policy.select(REQUEST, response(type)));
+        assertNull(policy.select(REQUEST, new ProxyResponseMetadata(200, Map.of())));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/assets/theme.css", "/assets/THEME.CSS", "/zk/theme.wcs;v=1",
+            "/zk/THEME.WCS;jsessionid=123?color=dark", "/assets/picture.png.css?x=.jpg"})
+    void legacySelectionRestoresCssAndWcsPathsWhenTheMimeTypeIsMissingOrBinary(String path) throws Exception {
+        LinkRewritePolicy policy = LinkRewritePolicy.legacyCompatible(new LinkRewriteSettings(BACKEND, FRONTEND, LIMIT, LIMIT));
+        ProxyRequestMetadata request = new ProxyRequestMetadata("GET", URI.create(BACKEND + path), Map.of());
+        String source = "url(http://backend.example/internal/font.woff) href='/not-html'";
+        for (Map<String, List<String>> headers : List.<Map<String, List<String>>>of(Map.of(),
+                Map.of("Content-Type", List.of("application/octet-stream")))) {
+            ProxyResponseMetadata response = new ProxyResponseMetadata(200, headers);
+            var selection = policy.select(request, response);
+            assertNotNull(selection, path);
+            ProxyResponseBody result = selection.rewriter().rewrite(response,
+                    body(source.getBytes(StandardCharsets.UTF_8), 3));
+            assertEquals(reference(source, false), new String(bytes(result), StandardCharsets.UTF_8));
+            assertEquals(headers.getOrDefault("Content-Type", List.of()), response.headerValues("Content-Type"),
+                    "Selection must not fabricate text/css metadata");
+        }
+    }
+
+    @Test
+    void legacyCssSelectionKeepsTheActualCharsetAndHtmlSubtype() throws Exception {
+        LinkRewritePolicy policy = LinkRewritePolicy.legacyCompatible(new LinkRewriteSettings(BACKEND, FRONTEND, LIMIT, LIMIT));
+        ProxyRequestMetadata request = new ProxyRequestMetadata("GET", URI.create(BACKEND + "/THEME.WCS;v=1"), Map.of());
+        String source = "Привет http://backend.example/internal/font.woff <a href='/legacy-html'>";
+        ProxyResponseMetadata binary = response("application/octet-stream; charset=windows-1251");
+        var selection = policy.select(request, binary);
+        assertNotNull(selection);
+        ProxyResponseBody result = selection.rewriter().rewrite(binary,
+                body(source.getBytes(Charset.forName("windows-1251")), 3));
+        assertEquals(reference(source, false), new String(bytes(result), Charset.forName("windows-1251")));
+        assertEquals(List.of("application/octet-stream; charset=windows-1251"), binary.headerValues("Content-Type"));
+
+        ProxyResponseMetadata html = response("text/html; charset=UTF-8");
+        var htmlSelection = policy.select(request, html);
+        assertNotNull(htmlSelection);
+        assertEquals(reference(source, true), new String(bytes(htmlSelection.rewriter().rewrite(html,
+                body(source.getBytes(StandardCharsets.UTF_8), 3))), StandardCharsets.UTF_8));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/assets/other?file=.css", "/assets/theme%2Ecss", "/assets/theme.css%3Bv=1",
+            "/assets;v=1/theme.css"})
+    void legacyPathSelectionDoesNotDecodeExtensionsOrMistakeQueryAndMatrixValuesForAFileExtension(String path) {
+        LinkRewritePolicy policy = LinkRewritePolicy.legacyCompatible(new LinkRewriteSettings(BACKEND, FRONTEND, LIMIT, LIMIT));
+        ProxyRequestMetadata request = new ProxyRequestMetadata("GET", URI.create(BACKEND + path), Map.of());
+        assertNull(policy.select(request, response("application/octet-stream")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/images/file.png", "/images/file.jpg", "/fonts/file.woff", "/fonts/file.ttf",
+            "/images/file.jpeg", "/images/file.gif", "/images/file.png/forwarded.html"})
+    void legacyHtmlSelectionRetainsTheExamplesImageAndFontPathExclusions(String path) {
+        LinkRewritePolicy policy = LinkRewritePolicy.legacyCompatible(new LinkRewriteSettings(BACKEND, FRONTEND, LIMIT, LIMIT));
+        ProxyRequestMetadata request = new ProxyRequestMetadata("GET", URI.create(BACKEND + path), Map.of());
+        assertNull(policy.select(request, response("text/html")));
+    }
+
+    @Test
+    void legacySelectionIsExplicitAndPreservesTheOldCssPriorityAndCaseSensitiveBinaryExclusion() {
+        var settings = new LinkRewriteSettings(BACKEND, FRONTEND, LIMIT, LIMIT);
+        LinkRewritePolicy safe = new LinkRewritePolicy(settings);
+        LinkRewritePolicy legacy = LinkRewritePolicy.legacyCompatible(settings);
+        ProxyRequestMetadata css = new ProxyRequestMetadata("GET", URI.create(BACKEND + "/theme.css"), Map.of());
+        assertNull(safe.select(css, response("application/octet-stream")));
+        assertNotNull(legacy.select(css, response("application/octet-stream")));
+        ProxyRequestMetadata png = new ProxyRequestMetadata("GET", URI.create(BACKEND + "/image.png"), Map.of());
+        assertNotNull(legacy.select(png, response("application/css")), "CSS subtype wins before binary path exclusions");
+        ProxyRequestMetadata upperPng = new ProxyRequestMetadata("GET", URI.create(BACKEND + "/image.PNG"), Map.of());
+        assertNotNull(legacy.select(upperPng, response("text/html")), "The legacy exclusion uses case-sensitive contains");
+        assertNotNull(safe.select(REQUEST, response("application/javascript")));
+        assertNull(legacy.select(REQUEST, response("application/javascript")), "Legacy selection is HTML/CSS/WCS, not JS MIME alone");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"gzip, identity;q=0", "gzip, *;q=0"})
+    void anIdentityExcludingClientKeepsTheOriginRepresentation(String preferences) {
+        ProxyRequestMetadata request = new ProxyRequestMetadata("GET", BACKEND,
+                Map.of("Accept-Encoding", List.of(preferences)));
+        assertNull(policy(LIMIT, LIMIT).select(request, response("text/html")));
+        ProxyRequestMetadata cssRequest = new ProxyRequestMetadata("GET", URI.create(BACKEND + "/theme.wcs"), request.headers());
+        assertNull(LinkRewritePolicy.legacyCompatible(new LinkRewriteSettings(BACKEND, FRONTEND, LIMIT, LIMIT))
+                .select(cssRequest, response("application/octet-stream")));
+    }
+
+    @Test
+    void identityPreferencesAreCombinedAcrossHeaderFieldsWithExplicitIdentityTakingPrecedence() {
+        LinkRewritePolicy policy = policy(LIMIT, LIMIT);
+        ProxyRequestMetadata denied = new ProxyRequestMetadata("GET", BACKEND,
+                Map.of("Accept-Encoding", List.of("gzip", "identity;q=0")));
+        assertNull(policy.select(denied, response("text/html")));
+        ProxyRequestMetadata permitted = new ProxyRequestMetadata("GET", BACKEND,
+                Map.of("Accept-Encoding", List.of("*;q=0", "identity;q=0.5")));
+        assertNotNull(policy.select(permitted, response("text/html")));
+    }
+
+    @Test
+    void inputAndExpandingOutputAreRejectedByTheApplicationBudget() {
+        LinkRewritePolicy inputLimited = policy(3, LIMIT);
+        assertThrows(RewriteLimitException.class, () -> rewrite(inputLimited, body(new byte[4], 2), "text/html"));
+        LinkRewritePolicy outputLimited = policy(LIMIT, 20);
+        assertThrows(RewriteLimitException.class,
+                () -> rewrite(outputLimited, body("<a href='/x'>".getBytes(StandardCharsets.UTF_8), 4), "text/html"));
+    }
+
+    @Test
+    void shrinkingReplacementCanFitAnOutputBudgetSmallerThanTheInput() throws Exception {
+        var settings = new LinkRewriteSettings(URI.create("http://a-very-long-backend.example/internal"),
+                URI.create("https://p.example/x"), LIMIT, 64);
+        String source = settings.backendBase() + "/one " + settings.backendBase() + "/two";
+        ProxyResponseBody output = rewrite(new LinkRewritePolicy(settings), body(source.getBytes(StandardCharsets.UTF_8), 5), "text/css");
+        assertEquals("https://p.example/x/one https://p.example/x/two", new String(bytes(output), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void excessiveEditComponentsAreRejectedBeforeCreatingAnUnboundedOutputList() {
+        byte[] input = "<a href='/x'>".repeat(20_000).getBytes(StandardCharsets.UTF_8);
+        assertThrows(RewriteLimitException.class,
+                () -> rewrite(policy(LIMIT, LIMIT), body(input, 65_536), "text/html"));
+    }
+
+    @Test
+    void genericCharsetFallbackAlsoHonorsTheEncodedOutputBudget() {
+        byte[] input = "<a href='/x'>".getBytes(StandardCharsets.UTF_16BE);
+        assertThrows(RewriteLimitException.class,
+                () -> rewrite(policy(LIMIT, 45), body(input, 3), "text/html; charset=UTF-16BE"));
+    }
+
+    @Test
+    void settingsValidateBaseUrlsAndCanonicalizeTrailingSlashes() {
+        assertEquals(BACKEND, new LinkRewriteSettings(URI.create(BACKEND + "/"), FRONTEND, 1, 1).backendBase());
+        assertThrows(IllegalArgumentException.class, () -> new LinkRewriteSettings(URI.create("file:///x"), FRONTEND, 1, 1));
+        assertThrows(IllegalArgumentException.class, () -> new LinkRewriteSettings(URI.create("http://user@backend/x"), FRONTEND, 1, 1));
+        assertThrows(IllegalArgumentException.class, () -> new LinkRewriteSettings(URI.create("http://backend/x?q=1"), FRONTEND, 1, 1));
+        assertThrows(IllegalArgumentException.class, () -> new LinkRewriteSettings(BACKEND, FRONTEND, 0, 1));
+    }
+
+    @Test
+    void onlyTheJoinSlashIsRemovedWhileAnIntentionalDuplicateBaseSlashIsPreserved() throws Exception {
+        LinkRewriteSettings settings = new LinkRewriteSettings(URI.create("http://backend.example/internal//"),
+                URI.create("https://portal.example/apps/service//"), LIMIT, LIMIT);
+        assertEquals("/internal/", settings.backendBase().getRawPath());
+        assertEquals("/apps/service/", settings.frontendBase().getRawPath());
+        String source = "http://backend.example/internal//asset.css http://backend.example/internal/other.css";
+        ProxyResponseBody result = rewrite(new LinkRewritePolicy(settings), body(source.getBytes(StandardCharsets.UTF_8), 7), "text/css");
+        assertEquals("https://portal.example/apps/service//asset.css http://backend.example/internal/other.css",
+                new String(bytes(result), StandardCharsets.UTF_8));
+    }
+
+    private static LinkRewritePolicy policy(long input, long output) {
+        return new LinkRewritePolicy(new LinkRewriteSettings(BACKEND, FRONTEND, input, output));
+    }
+    private static ProxyResponseMetadata response(String type) {
+        return new ProxyResponseMetadata(200, Map.of("Content-Type", List.of(type)));
+    }
+    private static ProxyResponseBody rewrite(LinkRewritePolicy policy, ProxyResponseBody body, String type) throws Exception {
+        ProxyResponseMetadata response = response(type);
+        ProxyResponseBodyPolicy.Selection selection = policy.select(REQUEST, response);
+        assertNotNull(selection);
+        return selection.rewriter().rewrite(response, body);
+    }
+    private static ProxyResponseBody body(byte[] bytes, int chunk) {
+        List<ByteBuffer> buffers = new ArrayList<>();
+        for (int offset = 0; offset < bytes.length; offset += chunk)
+            buffers.add(ByteBuffer.wrap(bytes, offset, Math.min(chunk, bytes.length - offset)).slice());
+        return ProxyResponseBody.of(buffers);
+    }
+    private static byte[] bytes(ProxyResponseBody body) {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        for (ByteBuffer buffer : body.buffers()) {
+            byte[] part = new byte[buffer.remaining()];
+            buffer.get(part);
+            output.writeBytes(part);
+        }
+        return output.toByteArray();
+    }
+    private static String reference(String source, boolean html) {
+        String frontend = FRONTEND.toASCIIString();
+        String rewritten = source.replace(BACKEND + "/", frontend + "/");
+        if (!html) return rewritten;
+        rewritten = Pattern.compile("href=[\"|'](/.+?)[\"|']").matcher(rewritten)
+                .replaceAll("href=\"" + Matcher.quoteReplacement(frontend) + "$1\"");
+        if (!Pattern.compile("<base\\s+href=.+>.*").matcher(rewritten).find())
+            rewritten = Pattern.compile("href=[\"|']((\\.\\./|\\./).+?)[\"|']").matcher(rewritten)
+                    .replaceAll("href=\"" + Matcher.quoteReplacement(frontend + "/") + "$1\"");
+        return Pattern.compile("<form(.+?)action=\"([^\"]+?)\"(.*?)>", Pattern.DOTALL).matcher(rewritten)
+                .replaceAll("<form$1action=\"" + Matcher.quoteReplacement(frontend) + "$2\"$3>");
+    }
+}

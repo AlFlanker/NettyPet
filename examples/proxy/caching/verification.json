@@ -1,0 +1,134 @@
+{
+  "cache_commit": "5206220a6349a0cb9a47395844cd297decd56713",
+  "library_runtime_commit": "46db2315298eb39bd19595276255db786560a42d",
+  "date": "2026-10-26",
+  "command": "gradle build",
+  "build_success": true,
+  "total_tests": 649,
+  "new_cache_tests": 36,
+  "modules": {
+    "app": {
+      "tests": 74,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "proxy": {
+      "tests": 87,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "command-support": {
+      "tests": 84,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-proxy": {
+      "tests": 221,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-proxy-spring": {
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-client-example": {
+      "tests": 104,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-proxy-integration-example": {
+      "tests": 72,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "cache_tests": {
+    "dev.example.integrationhost.LegacyCachingResponseTest": {
+      "tests": 15,
+      "scenarios": [
+        "resetBufferClearsBothBodiesAndResetAlsoClearsMetadata()",
+        "overflowBypassesCacheButDeliversTheWholeResponse()",
+        "exactSegmentBoundaryAndEmptyResponsesCaptureCorrectly()",
+        "readinessAndWriteNotificationsComeFromTheActualServletStream()",
+        "statusErrorsRedirectAndOversizedMetadataBypassCache()",
+        "onlyPositiveCompletionPublishesFullBodyAndReleasesReservationOnce()",
+        "snapshotPreservesInitialHeadersReplacementAndRepeatedCookies()",
+        "exhaustedSharedBudgetBypassesOnlyNewCapturesAndRecoversAfterCleanup()",
+        "flushAndBufferSizeRetainServletSemanticsWithoutAllocatingCapture()",
+        "declaredLengthMismatchCannotPublishEvenIfLegacyCommandReportsSuccess()",
+        "declaredLargeLengthIsForwardedWithoutCaptureAllocation()",
+        "unsuccessfulExchangeNeverPublishesAcceptedPrefix()",
+        "writeFailureAndReentrantAsyncErrorInvalidateCaptureBeforeCompletion()",
+        "writerUsesSelectedEncodingAndCannotBeMixedWithOutputStream()",
+        "byteBufferWriteDelegatesWithoutTheServletDefaultFullHeapCopy()"
+      ]
+    },
+    "dev.example.integrationhost.SharedResponseCacheTest": {
+      "tests": 6,
+      "scenarios": [
+        "QueryIsPartOfKeyAndRequestsWithIdentityRangesOrConditionsBypassCache()",
+        "SharedMaxAgeAndUpstreamAgeAreRespectedAndNoStoreOverridesExpires()",
+        "PublishedMetadataCannotBeMutatedToBypassWeightOrFreshness()",
+        "ExpiredEntriesAreNotServedAndAreRemovedWithoutHousekeepingDelay()",
+        "WeightedEvictionBoundsPayloadAndZeroByteEntries()",
+        "PrivateVariantCookiePartialAndUnfreshResponsesAreNotPublished()"
+      ]
+    },
+    "dev.example.integrationhost.CachedResponseWriterTest": {
+      "tests": 10,
+      "scenarios": [
+        "LastWriteAndFlushMustBothBecomeReadyBeforeCompletion()",
+        "SynchronousWriteFailureHasOneTerminalCallback()",
+        "AsyncTimeoutReleasesPendingHitWithoutWritingAfterRecycling()",
+        "CleanupFailureIsSuppressedOnFatalWriteFailure()",
+        "FatalCompletionCallbackIsNotHiddenByAnotherCompletionFailure()",
+        "StreamErrorFinishesOnceAndIgnoresLateReadiness()",
+        "eightMiBCacheHitWaitsForReadinessAndPreservesExactBytesWithBoundedWrites()",
+        "ExternalCompletionDoesNotCompleteContextAgainOrTouchRecycledOutput()",
+        "FatalReadinessWriteAndFlushErrorsCleanUpBeforeBeingRethrown()",
+        "SetupFailuresCompleteAvailableContextAndPreserveThePrimaryException()"
+      ]
+    },
+    "dev.example.integrationhost.LegacyCacheJettyIntegrationTest": {
+      "tests": 5,
+      "scenarios": [
+        "disconnectedSlowReaderCannotPublishAPartialEntryOrRetainTheCaptureBudget()",
+        "exhaustedCaptureBudgetBypassesAnotherRequestInsteadOfRejectingOrQueuingIt()",
+        "slowEightMebibyteMissUsesRealReadinessAndPublishesOnlyTheCompleteBody()",
+        "slowEightMebibyteCacheHitAlsoUsesNonblockingWrites()",
+        "declaredAndChunkedOversizeResponsesBypassCaptureWithoutTruncatingTheClientBody()"
+      ]
+    }
+  },
+  "source_sha256": {
+    "examples/proxy/caching/CachedResponse.java": "a2a91a39ecb2ef2cde0650a42de524352db66835dfce3510bb43bb40b53b66c4",
+    "examples/proxy/caching/CachedResponseWriter.java": "f2be5864c98411a6a655971d6f5c7ecb5b6275cc4f7345ec8d1d6b96017a2055",
+    "examples/proxy/caching/ContentCachingResponse.java": "a2410acf23ede384803209adaf9524b904c77766e7ad4c83d5b41e54e3e91115",
+    "examples/proxy/caching/SharedResponseCache.java": "a49e90ea9f81e441629e3d0e1bbfcff432cd1a786ce6ce6eba50542c1bfe2b31"
+  },
+  "limits": {
+    "max_entry_body_bytes": 8388608,
+    "aggregate_capture_reservation_bytes": 134217728,
+    "reservation_per_capture": "2 * max_entry_body_bytes",
+    "stored_cache_max_weight": 134217728,
+    "publication_workers": 1,
+    "publication_queue_capacity": 4,
+    "cache_hit_chunk_bytes": 65536
+  },
+  "scope": [
+    "Actual examples/proxy/caching/*.java compiled in test-only legacyCacheFixture",
+    "Five real Jetty integration tests: slow 8MiB miss and hit, full-body SHA-256, cancellation, capture budget exhaustion, declared and chunked oversized responses",
+    "Private portal dependencies are unavailable; the surrounding NettyProxyRequestExecutor adaptation is not compiled as a complete portal",
+    "Core library sources and production host packaging are unchanged; unchanged Gradle tasks reused",
+    "Capture/store limits do not bound total RSS or references retained by in-flight cache hits",
+    "No new RPS benchmark; legacy Netty miss writer factory remains blocking"
+  ]
+}

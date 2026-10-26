@@ -1,0 +1,68 @@
+{
+  "runtime_commit": "65a1f9efcfdc57c134dcdf6894218378674f59ed",
+  "date": "2026-10-26",
+  "jdk": "21.0.9+10",
+  "gradle": "8.14.3",
+  "commands": [
+    "gradle build",
+    "bash jetty-proxy-integration-example/verify-published-consumer.sh gradle"
+  ],
+  "build_success": true,
+  "tests": {
+    "app": {
+      "tests": 74,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "proxy": {
+      "tests": 87,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "command-support": {
+      "tests": 84,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-proxy": {
+      "tests": 176,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-proxy-spring": {
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-client-example": {
+      "tests": 104,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "jetty-proxy-integration-example": {
+      "tests": 24,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "total_tests": 553,
+  "note": "Unchanged app/proxy/command-support test tasks were UP-TO-DATE; changed Jetty modules ran with final runtime sources.",
+  "published_consumer": {
+    "gradle_module_metadata": "PASS",
+    "maven_pom_only": "PASS",
+    "repository": "local build/repository; no external publication"
+  },
+  "artifact_sha256": {
+    "jetty-proxy/build/libs/jetty-proxy-1.0.0.jar": "748523217d7cd41fb260984db6da05a228cec81a943eb86a8d0d25674d378d7d",
+    "jetty-proxy-spring/build/libs/jetty-proxy-spring-1.0.0.jar": "af9c7991ad1dd9e0cb1890e952fecea32a8befca0a66b590d0e859e003b65bf8",
+    "jetty-client-example/build/libs/jetty-client-example-1.0.0.jar": "0a5f5aca174b8190fcec988cf2d667e613d420b4fb79b303c82adca91c5891c6",
+    "jetty-proxy-integration-example/build/libs/jetty-proxy-integration-example-1.0.0.jar": "0b3b21205bbb9ce9f0734c6e5a87e40fe56e35b7ad0974b9968fe6232310a950"
+  }
+}

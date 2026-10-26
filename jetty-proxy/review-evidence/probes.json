@@ -1,0 +1,55 @@
+{
+  "review_head": "294f548dd850c95908cd3db24357aa12bd8d4042",
+  "runtime_commit": "65a1f9efcfdc57c134dcdf6894218378674f59ed",
+  "rewrite": [
+    {
+      "links": 0,
+      "inputBytes": 8388608,
+      "inputSegments": 128,
+      "outputBytes": 8388608,
+      "outputSegments": 128,
+      "writerCallsFromEngineAlgorithm": 128,
+      "segmentsBelow1KiB": 0,
+      "sha256Matches": true
+    },
+    {
+      "links": 40,
+      "inputBytes": 8388608,
+      "inputSegments": 128,
+      "outputBytes": 8388768,
+      "outputSegments": 208,
+      "writerCallsFromEngineAlgorithm": 208,
+      "segmentsBelow1KiB": 80,
+      "sha256Matches": true
+    },
+    {
+      "links": 10000,
+      "inputBytes": 8388608,
+      "inputSegments": 128,
+      "outputBytes": 8428608,
+      "outputSegments": 20124,
+      "writerCallsFromEngineAlgorithm": 20124,
+      "segmentsBelow1KiB": 20002,
+      "sha256Matches": true
+    }
+  ],
+  "integration": {
+    "existingUnqualifiedHttpClientConsumerFailsAfterImport": true,
+    "customClientHeadMethod": "HEAD",
+    "factoryClientHeadMethod": "head",
+    "wcsOctetStreamRewriteSkipped": true
+  },
+  "lifecycle": {
+    "tests": 2,
+    "assertions": "Intentionally assert existing incorrect state: terminal+upstreamDone, pending ownership true, activeRequests=1, incomplete completion. Passing means the defect was reproduced.",
+    "names": [
+      "anUploadPoolReleaseFailureStrandsUploadOwnershipAfterTheSenderReleasedItsChunk()",
+      "aStreamingChunkReleaseFailureStrandsWriteOwnershipAfterTheBytesWereWritten()"
+    ]
+  },
+  "raw_artifacts_directory": "/tmp/jetty-library-council-probes",
+  "publication": {
+    "servlet_api_pom_scope": "compile",
+    "servlet_api_in_gradle_runtime_dependencies": false
+  }
+}
