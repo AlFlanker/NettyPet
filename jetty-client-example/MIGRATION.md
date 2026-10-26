@@ -29,8 +29,10 @@ Filter, двумя настоящими transports и отдельным loader.
 | `ChannelManager`, Netty pipeline | Shared Jetty `HttpClient` из `JettyProxyClientFactory` |
 | `HttpProxy.load()` → String | Отдельный `ProxyResourceLoader` поверх bounded `ProxyFetchClient` |
 
-Исходники `examples/proxy` не включаются в source sets. Library не создаёт
-портальные `Backend`, registry или cache и не требует их классов на classpath.
+Портальные исходники не включаются в production source sets. Только cache helpers
+из `examples/proxy/caching` компилируются отдельным test fixture host-модуля.
+Library не создаёт портальные `Backend`, registry или cache и не требует их
+классов на classpath.
 
 ## Application Filter и однократный выбор
 
@@ -244,6 +246,28 @@ Body metadata очищается, ошибки получают `no-store`. Brok
 Servlet, downloadedBytes — успешные write callbacks. Handle отсоединяет Exchange.
 Не вызывайте старый lifecycle с сохранённым Servlet после его recycle: подготовьте
 immutable данные метрик/tracing, используйте быстрый callback либо `*Async`.
+
+## Существующий кэш ответов
+
+Исправленный `ContentCachingResponse` из `examples/proxy/caching` передаёт реальные
+Servlet readiness/listener и ограничивает накопление: 8 МиБ на запись, общий
+бюджет 128 МиБ с резервом `2 × maxCaptureBytes` для сегментов и финального массива.
+Overflow или нехватка бюджета отключают кэширование, сохраняя streaming.
+`finishCapture(true)` вызывается после успешного `ProxyCall.completion()` на
+ограниченном executor публикации; ошибка/отмена вызывают `discardCapture()`.
+Callback не читает уже завершённый Servlet.
+
+Готовые записи ограничены по весу в `SharedResponseCache`; попадания обслуживает
+`CachedResponseWriter` с настоящим `WriteListener`. Эти прикладные классы не входят
+в JAR библиотеки. Policy общего кэша допускает только явно выбранные публичные
+GET и ответы с подтверждённой свежестью; персональные и условные запросы обходят
+его. Полные тела по-прежнему занимают heap, поэтому cache budgets и число активных
+cache hits настраиваются отдельно от streaming/rewrite admission.
+
+Подключение, публикация и shutdown: [инструкция кэша](../examples/proxy/caching/README.md).
+Тесты host компилируют именно эти исходники и проверяют их с новым Jetty engine.
+Старый Netty writer factory продолжает выбирать blocking writer для такой обёртки;
+его путь записи этим изменением не переносится.
 
 ## Отдельный loader вместо повторной отправки исходного запроса
 

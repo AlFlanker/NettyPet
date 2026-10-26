@@ -36,7 +36,9 @@ Legacy-ветка использует настоящий Netty `ProxyEngine` и
 Новый Jetty handler использует target и timeout каждого маршрута. При переносе
 реального legacy transport его adapter должен явно реализовать нужные ему
 возможности маршрутизации; молчаливого перехода к fixed-настройкам нет.
-Портальные классы из `examples/proxy` не входят в source sets этого приложения.
+Портальные классы из `examples/proxy` не входят в production source sets этого
+приложения. Исключение для проверки — cache helpers: отдельный `legacyCacheFixture`
+компилирует их исходники только для тестов; в executable JAR они не попадают.
 
 ## Запуск
 
@@ -109,6 +111,15 @@ raw URI/context path, multipart POST/PUT, form PUT, SHA-256 тела GET 8 Ми�
 реальные wrappers, cookies, общие guards обоих входов, динамические route
 возможности каждого handler и отдельный full resource loader.
 Unit-тесты подтверждают отсутствие чтения тела и запуска async до handoff.
+
+Отдельные cache-тесты используют исправленные классы непосредственно из
+`examples/proxy/caching`: проверяют readiness, bounded capture и store, а также
+8 МиБ с SHA-256 через реальный Jetty при медленном чтении, cache hit, отмене,
+нехватке бюджета и превышении лимита тела. Настройки и код подключения находятся
+в [инструкции кэша](../examples/proxy/caching/README.md). Это тестовый пример
+интеграции; основные `/backend` handlers автоматически кэш не включают.
+Результат этапа кэша — [649 тестов, 36 новых cache-сценариев](../examples/proxy/caching/verification.json).
+
 Текущие исправления, проверенные артефакты и тестовые итоги:
 [FIXES.md](../jetty-proxy/FIXES.md),
 [fix-verification.json](../jetty-proxy/fix-verification.json).
