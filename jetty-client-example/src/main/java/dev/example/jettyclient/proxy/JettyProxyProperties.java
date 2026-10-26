@@ -11,6 +11,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 public record JettyProxyProperties(
         @DefaultValue("http://127.0.0.1:9000") URI upstream,
         @DefaultValue("65536") int chunkBytes,
+        @DefaultValue("16384") int maxResponseHeadersBytes,
         @DefaultValue("128") int maxConcurrent,
         @DefaultValue("64") int maxConnectionsPerDestination,
         @DefaultValue("64") int maxQueuedRequestsPerDestination,
@@ -31,12 +32,20 @@ public record JettyProxyProperties(
         if (chunkBytes < 1024 || chunkBytes > 65536) {
             throw new IllegalArgumentException("chunk-bytes must be 1024..65536");
         }
+        if (maxResponseHeadersBytes < 1) {
+            throw new IllegalArgumentException("max-response-headers-bytes must be positive");
+        }
         if (maxConcurrent < 1 || maxConnectionsPerDestination < 1
                 || maxQueuedRequestsPerDestination < 1 || selectors < 1) {
             throw new IllegalArgumentException("Concurrency, connection, queue and selector limits must be positive");
         }
         positiveMillis(connectTimeout, "connect-timeout");
         positiveMillis(exchangeTimeout, "exchange-timeout");
+        try {
+            exchangeTimeout.toNanos();
+        } catch (ArithmeticException overflow) {
+            throw new IllegalArgumentException("exchange-timeout is too large", overflow);
+        }
         positiveMillis(idleTimeout, "idle-timeout");
     }
 

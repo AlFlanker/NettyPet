@@ -297,6 +297,24 @@ class JettyProxyIntegrationTest {
     }
 
     @Test
+    void clientResetBeforeResponseHeadersEventuallyClosesUpstreamAndReleasesAdmission() throws Exception {
+        upstream.stallEntered = new CountDownLatch(1);
+        upstream.stallClosed = new CountDownLatch(1);
+        try (Socket socket = downstreamSocket()) {
+            send(socket, "GET /proxy/stall HTTP/1.1\r\nHost: localhost\r\n\r\n");
+            assertTrue(upstream.stallEntered.await(2, TimeUnit.SECONDS), "The request must reach the stalled upstream");
+            socket.setSoLinger(true, 0);
+        }
+        // No Servlet read/write is outstanding here; the absolute 4s deadline must still bound cleanup.
+        // Earlier disconnect detection is also valid and must not make this test fail.
+        assertTrue(upstream.stallClosed.await(6, TimeUnit.SECONDS), "Upstream closure must remain bounded after downstream reset");
+        awaitReleased();
+        HttpResponse<String> recovered = text("/proxy/ok");
+        assertEquals(200, recovered.statusCode());
+        assertEquals("ok", recovered.body());
+    }
+
+    @Test
     void clientResetDuringUploadClosesUpstreamAndReleasesAdmissionBeforeDeadline() throws Exception {
         upstream.uploadEntered = new CountDownLatch(1);
         upstream.uploadClosed = new CountDownLatch(1);

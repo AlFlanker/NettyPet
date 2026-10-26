@@ -123,6 +123,7 @@ th { background: #eaf0f6; font-weight: 700; }
 td code, th code { font-size: 9pt; }
 
 /* Keep the count column narrow in the test inventory. */
+#sheet-14 table:first-of-type { table-layout: fixed; }
 #sheet-14 table:first-of-type th:nth-child(1) { width: 40%; }
 #sheet-14 table:first-of-type th:nth-child(2) { width: 8%; }
 #sheet-14 table:first-of-type th:nth-child(3) { width: 52%; }
