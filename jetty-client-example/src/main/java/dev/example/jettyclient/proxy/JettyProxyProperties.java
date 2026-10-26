@@ -4,6 +4,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.Objects;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /** Настройки самостоятельного примера; лимиты destination не умножаются на число selectors. */
@@ -18,8 +19,10 @@ public record JettyProxyProperties(
         @DefaultValue("2") int selectors,
         @DefaultValue("3s") Duration connectTimeout,
         @DefaultValue("60s") Duration exchangeTimeout,
-        @DefaultValue("30s") Duration idleTimeout) {
+        @DefaultValue("30s") Duration idleTimeout,
+        @DefaultValue("60s") Duration destinationIdleTimeout) {
 
+    @ConstructorBinding
     public JettyProxyProperties {
         Objects.requireNonNull(upstream, "upstream");
         String scheme = upstream.getScheme();
@@ -47,6 +50,16 @@ public record JettyProxyProperties(
             throw new IllegalArgumentException("exchange-timeout is too large", overflow);
         }
         positiveMillis(idleTimeout, "idle-timeout");
+        positiveMillis(destinationIdleTimeout, "destination-idle-timeout");
+    }
+
+    /** Сохраняет прежний API с положительным сроком удаления пустых destinations. */
+    public JettyProxyProperties(URI upstream, int chunkBytes, int maxResponseHeadersBytes,
+            int maxConcurrent, int maxConnectionsPerDestination, int maxQueuedRequestsPerDestination,
+            int selectors, Duration connectTimeout, Duration exchangeTimeout, Duration idleTimeout) {
+        this(upstream, chunkBytes, maxResponseHeadersBytes, maxConcurrent, maxConnectionsPerDestination,
+                maxQueuedRequestsPerDestination, selectors, connectTimeout, exchangeTimeout, idleTimeout,
+                Duration.ofSeconds(60));
     }
 
     private static void positiveMillis(Duration value, String name) {

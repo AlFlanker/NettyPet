@@ -42,6 +42,13 @@ final class ProxyHeaders {
         return headers;
     }
 
+    static HttpFields snapshot(HttpServletResponse response) {
+        HttpFields.Mutable headers = HttpFields.build();
+        for (String name : response.getHeaderNames())
+            for (String value : response.getHeaders(name)) headers.add(name, value);
+        return headers.asImmutable();
+    }
+
     static HttpFields request(ProxyRequestMetadata metadata, List<ProxyHeaderCustomizer> customizers) {
         HttpFields.Mutable source = HttpFields.build();
         metadata.headers().forEach((name, values) -> values.forEach(value -> source.add(name, value)));
@@ -84,7 +91,7 @@ final class ProxyHeaders {
             String lower = field.getName().toLowerCase(Locale.ROOT);
             // A preceding Filter may already have issued an application/session cookie.
             // Set-Cookie fields are independent and must never replace or join each other.
-            if (lower.equals("set-cookie")) target.addHeader(field.getName(), field.getValue());
+            if (lower.equals("set-cookie") || lower.equals("vary")) target.addHeader(field.getName(), field.getValue());
             else if (seen.add(lower)) target.setHeader(field.getName(), field.getValue());
             else target.addHeader(field.getName(), field.getValue());
         }

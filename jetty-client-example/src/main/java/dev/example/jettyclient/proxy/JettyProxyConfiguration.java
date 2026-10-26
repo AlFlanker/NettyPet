@@ -37,6 +37,7 @@ public class JettyProxyConfiguration {
         client.setMaxResponseHeadersSize(properties.maxResponseHeadersBytes());
         client.setConnectTimeout(properties.connectTimeout().toMillis());
         client.setIdleTimeout(properties.idleTimeout().toMillis());
+        client.setDestinationIdleTimeout(properties.destinationIdleTimeout().toMillis());
         try {
             client.start();
             // start() устанавливает стандартные обработчики и декодеры заново.

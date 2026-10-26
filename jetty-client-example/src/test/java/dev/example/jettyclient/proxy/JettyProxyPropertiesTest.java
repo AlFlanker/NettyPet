@@ -51,6 +51,24 @@ class JettyProxyPropertiesTest {
         assertEquals(MINIMUM, properties.idleTimeout());
     }
 
+    @Test
+    void legacyConstructorKeepsDestinationEvictionEnabled() {
+        assertEquals(Duration.ofSeconds(60), properties(MINIMUM, MINIMUM, MINIMUM).destinationIdleTimeout());
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidDestinationTimeouts")
+    void rejectsInvalidDestinationIdleTimeoutWithItsPropertyName(Duration timeout) {
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> new JettyProxyProperties(URI.create("http://127.0.0.1:9000"),
+                        65_536, 16_384, 128, 64, 64, 2, MINIMUM, MINIMUM, MINIMUM, timeout));
+        assertTrue(failure.getMessage().contains("destination-idle-timeout"));
+    }
+
+    private static Stream<Duration> invalidDestinationTimeouts() {
+        return Stream.concat(Stream.of((Duration)null), invalidTimeouts());
+    }
+
     @ParameterizedTest
     @ValueSource(ints = {0, -1})
     void rejectsNonpositiveResponseHeadersLimit(int limit) {

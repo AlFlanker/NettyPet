@@ -31,3 +31,6 @@ example:
     exchange-timeout: 60s
     # Отсутствие сетевого трафика в соединении, включая активную передачу.
     idle-timeout: 30s
+    # Удаление destinations без обменов и соединений при смене backend/адресов.
+    # Отличается от idle-timeout соединения; положительное значение включает sweeper клиента.
+    destination-idle-timeout: 60s

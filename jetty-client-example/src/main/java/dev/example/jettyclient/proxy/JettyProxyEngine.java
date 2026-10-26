@@ -35,6 +35,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.eclipse.jetty.client.AsyncRequestContent;
 import org.eclipse.jetty.client.HttpClient;
@@ -46,6 +47,7 @@ import org.eclipse.jetty.ee11.servlet.ServletContextRequest;
 import org.eclipse.jetty.io.Content;
 import org.eclipse.jetty.io.RetainableByteBuffer;
 import org.eclipse.jetty.http.HttpFields;
+import org.eclipse.jetty.http.QuotedCSV;
 import org.eclipse.jetty.util.Callback;
 
 /**
@@ -117,70 +119,89 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
             ProxyRequestPlan plan) {
         java.util.Objects.requireNonNull(request, "request");
         java.util.Objects.requireNonNull(response, "response");
-        // Establish ownership before any rejection path may complete an async.
-        // An unrelated context remains owned by its caller even on programming errors.
-        if (supplied != null && (supplied.getRequest() != request || supplied.getResponse() != response))
-            return rejectEarly(response, null, 500);
-        if (request.getMethod().equals("CONNECT") || request.getHeader("Upgrade") != null
-                || ProxyHeaders.hasToken(request, "Connection", "upgrade")) {
-            return rejectEarly(response, supplied, 501);
-        }
-        if (request.getHeader("Expect") != null) {
-            return rejectEarly(response, supplied, 417);
-        }
-        if (!ProxyHeaders.supportedTransferEncoding(Collections.list(request.getHeaders("Transfer-Encoding")))) {
-            return rejectEarly(response, supplied, 400);
-        }
-        if (plan == null || !validTarget(plan.target())) return rejectEarly(response, supplied, 400);
-        if (!request.isAsyncSupported() || (supplied == null ? request.isAsyncStarted() : !request.isAsyncStarted())) {
-            return rejectEarly(response, supplied, 500);
-        }
-        Exchange exchange;
-        synchronized (admissionGuard) {
-            if (stopped || !admission.tryAcquire()) return rejectEarly(response, supplied, 503);
-            try {
+        AsyncContext owned = null;
+        Exchange exchange = null;
+        boolean permitAcquired = false;
+        try {
+            // Establish ownership before a rejection or accessor failure may complete async.
+            if (supplied != null) {
+                if (supplied.getRequest() != request || supplied.getResponse() != response)
+                    return rejectEarly(response, null, 500);
+                owned = supplied;
+            }
+            if (request.getMethod().equals("CONNECT") || request.getHeader("Upgrade") != null
+                    || ProxyHeaders.hasToken(request, "Connection", "upgrade"))
+                return rejectEarly(response, owned, 501);
+            if (request.getHeader("Expect") != null) return rejectEarly(response, owned, 417);
+            if (!ProxyHeaders.supportedTransferEncoding(Collections.list(request.getHeaders("Transfer-Encoding"))))
+                return rejectEarly(response, owned, 400);
+            if (plan == null || !validTarget(plan.target())) return rejectEarly(response, owned, 400);
+            if (!request.isAsyncSupported() || (supplied == null ? request.isAsyncStarted() : !request.isAsyncStarted()))
+                return rejectEarly(response, owned, 500);
+            synchronized (admissionGuard) {
+                if (stopped) return rejectEarly(response, owned, 503);
+                if (client.getExecutor() == null) return rejectEarly(response, owned, 503);
+                if (!admission.tryAcquire()) return rejectEarly(response, owned, 503);
+                permitAcquired = true;
                 ProxyRequestMetadata metadata = new ProxyRequestMetadata(request.getMethod(), plan.target(),
                         ProxyHeaders.snapshot(request));
                 long contentLength = request.getContentLengthLong();
+                HttpFields applicationHeaders = ProxyHeaders.snapshot(response);
                 // Preserve the actual request/response wrappers supplied by the filter chain.
-                AsyncContext async = supplied == null ? request.startAsync(request, response) : supplied;
-                exchange = new Exchange(request, response, async, metadata, contentLength, plan);
+                if (owned == null) owned = request.startAsync(request, response);
+                exchange = new Exchange(request, response, owned, metadata, contentLength, plan, applicationHeaders);
                 exchanges.add(exchange);
-            } catch (RuntimeException | Error failure) {
-                admission.release();
-                throw failure;
+                // From here Exchange owns the permit, including setup/dispatch failure.
+                permitAcquired = false;
+                exchange.attachLifecycle();
             }
-            // Listener registration must finish on the original service thread,
-            // before the container can complete/recycle an asynchronous request.
-            // Once registered in exchanges, only Exchange releases the admission.
-            try { exchange.attachLifecycle(); }
-            catch (RuntimeException failure) {
+            exchange.dispatch(exchange::start);
+            return exchange.handle;
+        } catch (RuntimeException | AssertionError | LinkageError failure) {
+            if (exchange != null) {
                 exchange.setupFailed(failure);
-                return exchange;
-            } catch (Error failure) {
-                exchange.setupFailed(failure);
-                throw failure;
+                return exchange.handle;
             }
+            if (permitAcquired) admission.release();
+            return rejectEarly(response, owned, 500, failure);
+        } catch (Error fatal) {
+            if (exchange != null) exchange.setupFailed(fatal);
+            else {
+                if (permitAcquired) admission.release();
+                if (owned != null) {
+                    try { owned.complete(); }
+                    catch (RuntimeException ignored) { }
+                }
+            }
+            throw fatal;
         }
-        exchange.dispatch(exchange::start);
-        return exchange;
     }
 
     private static ProxyCall rejectEarly(HttpServletResponse response, AsyncContext supplied, int status) {
+        return rejectEarly(response, supplied, status, new IOException("Proxy rejected request: " + status));
+    }
+
+    private static ProxyCall rejectEarly(HttpServletResponse response, AsyncContext supplied, int status, Throwable failure) {
         try { reject(response, status); }
+        catch (RuntimeException | AssertionError | LinkageError responseFailure) {
+            if (responseFailure != failure) failure.addSuppressed(responseFailure);
+        }
         finally {
             if (supplied != null) {
                 try { supplied.complete(); }
                 catch (IllegalStateException ignored) { }
+                catch (RuntimeException completionFailure) {
+                    if (completionFailure != failure) failure.addSuppressed(completionFailure);
+                    try {
+                        HttpServletRequest incoming = (HttpServletRequest)supplied.getRequest();
+                        ServletContextRequest.getServletContextRequest(incoming).getServletChannel().abort(failure);
+                    } catch (RuntimeException ignored) { }
+                }
             }
         }
-        CompletionStage<ProxyExchangeResult> result = CompletableFuture.completedFuture(new ProxyExchangeResult(
-                status, new IOException("Proxy rejected request: " + status), 0, 0, Duration.ZERO))
-                .minimalCompletionStage();
-        return new ProxyCall() {
-            @Override public CompletionStage<ProxyExchangeResult> completion() { return result; }
-            @Override public void cancel(Throwable cause) { }
-        };
+        CallHandle handle = new CallHandle(null);
+        handle.complete(new ProxyExchangeResult(status, failure, 0, 0, Duration.ZERO));
+        return handle;
     }
 
     private static boolean validTarget(URI target) {
@@ -192,9 +213,15 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
     }
 
     private static void reject(HttpServletResponse response, int status) {
+        // A preceding Filter's security/cookie headers survive, while metadata of
+        // its earlier representation cannot describe this local empty response.
+        for (String name : List.of("Content-Type", "Content-Length", "Content-Encoding", "Content-Range",
+                "ETag", "Content-MD5", "Digest", "Content-Digest", "Repr-Digest", "Last-Modified",
+                "Accept-Ranges", "Transfer-Encoding", "Trailer", "Expires", "Age")) response.setHeader(name, null);
         response.setStatus(status);
         response.setContentLength(0);
         response.setHeader("Connection", "close");
+        if (status >= 400) response.setHeader("Cache-Control", "no-store");
     }
 
     @Override
@@ -211,7 +238,7 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
         rewriteExecutor.shutdown();
     }
 
-    private final class Exchange implements Response.Listener, ProxyCall {
+    private final class Exchange implements Response.Listener {
         private final HttpServletRequest incoming;
         private final HttpServletResponse outgoing;
         private final AsyncContext async;
@@ -220,8 +247,11 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
         private final boolean body;
         private final ProxyRequestPlan plan;
         private final List<ProxyHeaderCustomizer> exchangeCustomizers;
-        private final CompletableFuture<ProxyExchangeResult> result = new CompletableFuture<>();
-        private final CompletionStage<ProxyExchangeResult> resultView = result.minimalCompletionStage();
+        private final HttpFields applicationHeaders;
+        private final CallHandle handle = new CallHandle(cause -> {
+            Throwable failure = cause == null ? new CancellationException("Proxy call cancelled") : cause;
+            dispatch(() -> fail(503, failure));
+        });
         private final Object servletGuard = new Object();
         private final ConcurrentLinkedQueue<Runnable> events = new ConcurrentLinkedQueue<>();
         private final AtomicInteger work = new AtomicInteger();
@@ -262,17 +292,19 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
         private BufferedResponseContent rewriteInput;
         private boolean rewritePending;
         private boolean rewriteStarted;
+        private RewriteTask rewriteTask;
         private Iterator<ByteBuffer> rewrittenBuffers;
         private ByteBuffer rewrittenBuffer;
 
         Exchange(HttpServletRequest incoming, HttpServletResponse outgoing, AsyncContext async,
-                ProxyRequestMetadata metadata, long contentLength, ProxyRequestPlan plan) {
+                ProxyRequestMetadata metadata, long contentLength, ProxyRequestPlan plan, HttpFields applicationHeaders) {
             this.incoming = incoming;
             this.outgoing = outgoing;
             this.async = async;
             this.metadata = metadata;
             this.contentLength = contentLength;
             this.plan = plan;
+            this.applicationHeaders = applicationHeaders;
             if (plan.customizers().isEmpty()) exchangeCustomizers = customizers;
             else {
                 var combined = new ArrayList<>(customizers);
@@ -281,14 +313,6 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
             }
             body = contentLength >= 0 || !metadata.headerValues("Transfer-Encoding").isEmpty();
             uploadEnded = !body;
-        }
-
-        @Override public CompletionStage<ProxyExchangeResult> completion() { return resultView; }
-
-        @Override public void cancel(Throwable cause) {
-            if (result.isDone()) return;
-            Throwable failure = cause == null ? new CancellationException("Proxy call cancelled") : cause;
-            dispatch(() -> fail(503, failure));
         }
 
         /** All callbacks enqueue signals; synchronous completion cannot recurse into another write. */
@@ -340,6 +364,15 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                 deadline = timer.schedule(() -> dispatch(() -> fail(504, new TimeoutException("Exchange deadline"))),
                         remaining, TimeUnit.NANOSECONDS);
                 HttpFields.Mutable requestHeaders = HttpFields.build(ProxyHeaders.request(metadata, exchangeCustomizers));
+                // An opaque rewriter cannot validate a cached transformed representation
+                // using the origin's representation-specific validators. Keep existence
+                // conditions and write preconditions, and preserve explicit Range passthrough.
+                if (potentialRewrite() && (metadata.method().equals("GET") || metadata.method().equals("HEAD"))
+                        && requestHeaders.getValuesList("Range").isEmpty()) {
+                    if (!requestHeaders.getValuesList("If-None-Match").stream().anyMatch(value -> value.trim().equals("*")))
+                        requestHeaders.remove("If-None-Match");
+                    requestHeaders.remove("If-Modified-Since");
+                }
                 int localStatus = ProxyHeaders.prepareForwarding(metadata.method(), requestHeaders);
                 if (localStatus != 0) {
                     completeLocal(localStatus);
@@ -508,13 +541,29 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                                 properties.chunkBytes(), rewriteSelection.maxInputBytes());
                     }
                 }
-                if (rewriteSelection == null) applyResponseHeaders(responseHeaders);
+                if (rewriteSelection == null) {
+                    if (metadataOnly && potentialRewrite() && rewriteRepresentationAllowed(code, headers)) {
+                        HttpFields.Mutable filtered = HttpFields.build(responseHeaders);
+                        removeRepresentationMetadata(filtered);
+                        filtered.remove("Content-Length");
+                        responseHeaders = filtered.asImmutable();
+                    }
+                    applyResponseHeaders(responseHeaders);
+                }
                 pumpDownload();
             });
         }
 
         private boolean canRewrite(int code, HttpFields headers) {
-            if (noBody || code == 206 || headers.contains("Content-Range")) return false;
+            return !noBody && rewriteRepresentationAllowed(code, headers);
+        }
+
+        private boolean potentialRewrite() {
+            return plan.responseBody() != null && !forbidsTransformation(metadata.headerValues("Cache-Control"));
+        }
+
+        private boolean rewriteRepresentationAllowed(int code, HttpFields headers) {
+            if (code == 206 || headers.contains("Content-Range")) return false;
             List<String> encodings = headers.getValuesList("Content-Encoding");
             if (!encodings.isEmpty() && (encodings.size() != 1 || !encodings.getFirst().trim().equalsIgnoreCase("identity")))
                 return false;
@@ -523,9 +572,14 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
         }
 
         private boolean forbidsTransformation(List<String> values) {
-            return values.stream()
-                    .flatMap(value -> java.util.Arrays.stream(value.split(",")))
-                    .anyMatch(value -> value.trim().equalsIgnoreCase("no-transform"));
+            for (String directive : new QuotedCSV(true, values.toArray(String[]::new)))
+                if (directive.trim().equalsIgnoreCase("no-transform")) return true;
+            return false;
+        }
+
+        private void removeRepresentationMetadata(HttpFields.Mutable headers) {
+            for (String name : List.of("ETag", "Content-MD5", "Digest", "Content-Digest", "Repr-Digest",
+                    "Last-Modified", "Accept-Ranges")) headers.remove(name);
         }
 
         private void applyResponseHeaders(HttpFields headers) {
@@ -659,47 +713,65 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
             rewriteStarted = true;
             ProxyResponseBody inputBody = rewriteInput.body();
             rewritePending = true;
+            RewriteTask task = new RewriteTask(inputBody);
+            rewriteTask = task;
             try {
-                rewriteExecutor.execute(() -> {
+                rewriteExecutor.execute(task);
+            } catch (RuntimeException | Error failure) {
+                // An executor may throw after queueing a job while creating a worker.
+                // Release input only if the task has not claimed the right to read it.
+                task.cancelQueued();
+                throw failure;
+            }
+        }
+
+        private final class RewriteTask implements Runnable {
+            private final ProxyResponseBody inputBody;
+            private final AtomicBoolean claimed = new AtomicBoolean();
+
+            RewriteTask(ProxyResponseBody inputBody) { this.inputBody = inputBody; }
+
+            /** Called only by the serialized exchange owner. */
+            void cancelQueued() {
+                if (!claimed.compareAndSet(false, true)) return;
+                rewriteExecutor.remove(this);
+                rewriteTask = null;
+                rewritePending = false;
+            }
+
+            @Override public void run() {
+                if (!claimed.compareAndSet(false, true)) return;
+                ProxyResponseBody output = null;
+                Throwable failure = null;
+                try {
                     boolean cancelled;
                     synchronized (servletGuard) { cancelled = terminal; }
-                    if (cancelled) {
-                        dispatch(() -> rewritePending = false);
+                    if (!cancelled) output = java.util.Objects.requireNonNull(
+                            rewriteSelection.rewriter().rewrite(responseMetadata, inputBody), "rewrite output");
+                } catch (Throwable problem) { failure = problem; }
+                ProxyResponseBody transformed = output;
+                Throwable problem = failure;
+                dispatch(() -> {
+                    rewritePending = false;
+                    rewriteTask = null;
+                    if (terminal) return;
+                    if (problem != null) {
+                        fail(problem instanceof ProxyResponseBody.TooManyBuffersException ? 502 : 500, problem);
                         return;
                     }
-                    ProxyResponseBody output = null;
-                    Throwable failure = null;
-                    try {
-                        output = java.util.Objects.requireNonNull(
-                                rewriteSelection.rewriter().rewrite(responseMetadata, inputBody), "rewrite output");
-                    } catch (Throwable problem) { failure = problem; }
-                    ProxyResponseBody transformed = output;
-                    Throwable problem = failure;
-                    dispatch(() -> {
-                        rewritePending = false;
-                        if (terminal) return;
-                        if (problem != null) {
-                            fail(problem instanceof ProxyResponseBody.TooManyBuffersException ? 502 : 500, problem);
-                            return;
-                        }
-                        if (transformed.length() > rewriteSelection.maxOutputBytes()
-                                || transformed.bufferCount() > ProxyResponseBody.MAX_BUFFERS) {
-                            fail(502, new IOException("Response exceeds rewrite output limit"));
-                            return;
-                        }
-                        List<ByteBuffer> buffers = transformed.buffers();
-                        HttpFields.Mutable headers = HttpFields.build(preparedResponseHeaders);
-                        for (String name : List.of("ETag", "Content-MD5", "Digest", "Content-Digest", "Repr-Digest",
-                                "Last-Modified", "Accept-Ranges")) headers.remove(name);
-                        headers.put("Content-Length", Long.toString(transformed.length()));
-                        rewrittenBuffers = buffers.iterator();
-                        applyResponseHeaders(headers);
-                        pumpDownload();
-                    });
+                    if (transformed.length() > rewriteSelection.maxOutputBytes()
+                            || transformed.bufferCount() > ProxyResponseBody.MAX_BUFFERS) {
+                        fail(502, new IOException("Response exceeds rewrite output limit"));
+                        return;
+                    }
+                    List<ByteBuffer> buffers = transformed.buffers();
+                    HttpFields.Mutable headers = HttpFields.build(preparedResponseHeaders);
+                    removeRepresentationMetadata(headers);
+                    headers.put("Content-Length", Long.toString(transformed.length()));
+                    rewrittenBuffers = buffers.iterator();
+                    applyResponseHeaders(headers);
+                    pumpDownload();
                 });
-            } catch (RuntimeException | Error failure) {
-                rewritePending = false;
-                throw failure;
             }
         }
 
@@ -784,16 +856,10 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
         private void fail(int code, Throwable failure) {
             if (terminal) return;
             terminal = true;
-            // After commit the HTTP status is already on the wire. Preserve it
-            // in the result and report truncation through failure instead.
-            boolean committed = false;
-            if (servletAvailable) {
-                try { committed = outgoing.isCommitted(); }
-                catch (RuntimeException | Error unavailable) { servletAvailable = false; }
-            }
-            if (responseStatus == 0 || (servletAvailable && !committed)) responseStatus = code;
             terminalFailure = failure;
+            if (responseStatus == 0) responseStatus = code;
             if (deadline != null) deadline.cancel(false);
+            if (rewriteTask != null) rewriteTask.cancelQueued();
             if (pendingChunk != null) {
                 release(pendingChunk);
                 pendingChunk = null;
@@ -804,11 +870,16 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
             if (downstream != null) downstream.cancel(failure);
             if (!servletAvailable) return;
             try {
+                // Query wrappers inside the failure path: a broken accessor must
+                // still abort downstream rather than strand a timeout=0 async.
+                boolean committed = outgoing.isCommitted();
                 if (committed) {
                     servletAvailable = false;
                     abortDownstream(failure);
                 } else {
+                    responseStatus = code;
                     outgoing.reset();
+                    ProxyHeaders.applyResponse(applicationHeaders, outgoing);
                     reject(outgoing, code);
                     async.complete();
                 }
@@ -826,18 +897,44 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
 
         private void finishCleanup() {
             if (terminal && !rewritePending && !writePending && rewriteInput != null) {
-                rewriteInput.close();
+                BufferedResponseContent releasing = rewriteInput;
                 rewriteInput = null;
                 rewrittenBuffers = null;
                 rewrittenBuffer = null;
+                try { releasing.close(); }
+                catch (RuntimeException | Error cleanupFailure) {
+                    if (terminalFailure == null) terminalFailure = cleanupFailure;
+                    else if (terminalFailure != cleanupFailure) terminalFailure.addSuppressed(cleanupFailure);
+                }
             }
             if (terminal && upstreamDone && !uploadPending && !writePending && !rewritePending && retainedChunks.get() == 0
                     && released.compareAndSet(false, true)) {
                 exchanges.remove(this);
                 admission.release();
-                result.complete(new ProxyExchangeResult(responseStatus, terminalFailure, uploaded, downloaded,
+                handle.complete(new ProxyExchangeResult(responseStatus, terminalFailure, uploaded, downloaded,
                         Duration.ofNanos(System.nanoTime() - started)));
             }
+        }
+    }
+
+    /** Completed public handles retain the outcome, not the Servlet exchange and its buffers. */
+    private static final class CallHandle implements ProxyCall {
+        private final CompletableFuture<ProxyExchangeResult> result = new CompletableFuture<>();
+        private final CompletionStage<ProxyExchangeResult> view = result.minimalCompletionStage();
+        private final AtomicReference<Consumer<Throwable>> cancellation;
+
+        CallHandle(Consumer<Throwable> cancellation) { this.cancellation = new AtomicReference<>(cancellation); }
+
+        @Override public CompletionStage<ProxyExchangeResult> completion() { return view; }
+
+        @Override public void cancel(Throwable cause) {
+            Consumer<Throwable> action = cancellation.get();
+            if (action != null) action.accept(cause);
+        }
+
+        void complete(ProxyExchangeResult outcome) {
+            cancellation.set(null);
+            result.complete(outcome);
         }
     }
 
