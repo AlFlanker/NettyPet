@@ -2,21 +2,31 @@
 
 Самостоятельный пример на Java 21, Spring Boot **4.1.1** и Jetty **12.1.12** из BOM
 Spring Boot. Встроенный Jetty принимает запросы, отдельный Jetty `HttpClient`
-передаёт их фиксированному HTTP(S) upstream по HTTP/1.1. Модуль не зависит от
-`app`, `proxy` и `command-support` и не содержит Spring Security.
+передаёт их HTTP(S) upstream по HTTP/1.1. Default planner использует фиксированный
+адрес; приложение может подготовить target и настройки для каждого запроса.
+Модуль не зависит от `app`, `proxy` и `command-support` и не содержит Spring Security.
 
-Это отдельный пример, а не замена транспорта основного приложения: здесь нет
-RequestProcessor, команд и Resilience4j. Результаты ревью, выполненные проверки
-и контрольные замеры с их ограничениями описаны в [REVIEW.md](REVIEW.md).
+Точки подключения к существующему приложению — `JettyProxyFilter`,
+`ProxyRequestPlanner`, `ProxyExchangeExecutor` и `ProxyRequestPlan`.
+[Гайд миграции из examples/proxy](MIGRATION.md) сопоставляет их с `HttpProxyFilter`,
+executor lookup, обработчиками заголовков, cookies и переписчиками тела.
+Feature toggle можно подключить на границе выбора executor; сам toggle здесь
+не реализован. RequestProcessor, команды и Resilience4j модуль не включает.
+Текущие изменения и проверки: [INTEGRATION_REVIEW.md](INTEGRATION_REVIEW.md).
 
-Повторное строгое ревью и исправления: [STRICT_REVIEW.md](STRICT_REVIEW.md).
-Отдельный контроль до/после исправлений с SHA JAR и сырыми прогонами:
-[strict-review-performance.json](strict-review-performance.json).
+[REVIEW.md](REVIEW.md), [STRICT_REVIEW.md](STRICT_REVIEW.md) и
+[strict-review-performance.json](strict-review-performance.json) фиксируют
+предыдущие этапы ревью Servlet-варианта. Указанные там тесты и измерения относятся
+к соответствующим версиям. Новый короткий контроль Filter/engine находится
+в [filter-integration-performance.json](filter-integration-performance.json):
+159,96 → 176,83 rps для GET 8 МиБ, ошибок нет. Общий CPU с JMeter/upstream,
+два коротких прогона на вариант; устойчивое ускорение этим не доказано.
 
 Подробный [PDF-гайд по устройству модуля](docs/jetty-client-guide.pdf) показывает
 порядок вызовов, upload/download, владение буферами, расширение заголовков,
 ошибки и завершение обмена. Рядом находятся [текст гайда](docs/guide.md),
-исходники диаграмм и [инструкция пересборки PDF](docs/README.md).
+исходники диаграмм и [инструкция пересборки PDF](docs/README.md). Гайд обновлён
+для Filter → planner → engine, request plan, completion и bounded rewrite.
 
 ## Запуск
 
@@ -58,8 +68,11 @@ curl --path-as-is -i 'http://127.0.0.1:8081/proxy/a%20b?x=%2F&x=2'
 
 ## Маршрутизация и тела
 
-`JettyProxyServlet` явно зарегистрирован на **`/proxy` и `/proxy/*`** с поддержкой
-Servlet async. Остальные маршруты обслуживает обычный Spring MVC. При upstream
+`JettyProxyFilter` зарегистрирован на **`/*`**, а default planner выбирает только
+**`/proxy` и `/proxy/*`**. Filter поддерживает Servlet async для обычного REQUEST
+dispatch. Planner выполняется до async на исходном потоке и возвращает plan;
+`null` продолжает локальную Filter chain.
+Остальные маршруты обслуживает обычный Spring MVC. При upstream
 `http://127.0.0.1:9000/base`:
 
 | Входящий запрос | Upstream |
@@ -70,10 +83,14 @@ Servlet async. Остальные маршруты обслуживает обы
 
 Путь и query принятого контейнером запроса используются без дополнительного
 декодирования и нормализации. Уже записанные `%XX` не кодируются повторно.
-Контейнер может отклонить неоднозначный URI до вызова Servlet.
+Контейнер может отклонить неоднозначный URI до вызова Filter. `JettyProxyServlet`
+остаётся дополнительным адаптером к общему engine; включать оба entry point для
+одного и того же запроса не требуется.
 
-Тела передаются потоком, без сборки полного запроса или ответа в памяти. JSON,
-бинарные данные, multipart и сжатые представления остаются непрозрачными:
+По умолчанию тела передаются потоком, без сборки полного запроса или ответа
+в памяти. Явно выбранное преобразование ответа использует отдельный ограниченный
+путь, описанный ниже. JSON, бинарные данные, multipart и сжатые представления
+в streaming режиме остаются непрозрачными:
 прокси не разбирает части multipart и не распаковывает `Content-Encoding`.
 HTTP framing, в том числе границы chunked-порций, на каждом соединении формируется
 заново; сохранение исходных границ не обещается. Глобальный MVC `FormContentFilter`
@@ -139,8 +156,10 @@ HttpClient, которая отличается от пулов по event loop 
 ## Добавление заголовков
 
 Объявите Spring bean типа `ProxyHeaderCustomizer` в конфигурации приложения.
-Без таких beans заголовки дополнительно не меняются. `@Order` задаёт порядок
-вызовов от меньшего значения к большему, одинаковый для обоих направлений.
+Глобальные hooks вызываются по `@Order`, затем customizers конкретного
+`ProxyRequestPlan` в порядке добавления. Без hooks заголовки дополнительно
+не меняются. `@Order` задаёт порядок от меньшего значения к большему, одинаковый
+для обоих направлений.
 Например, в пакете `dev.example.jettyclient`:
 
 ```java
@@ -193,7 +212,8 @@ class ExampleHeaders {
 
 `set` заменяет все значения заголовка, `add` сохраняет предыдущие, `remove`
 удаляет их без учёта регистра имени. `values` возвращает неизменяемый снимок
-текущих значений. Повторные `Set-Cookie` не объединяются в одну строку.
+текущих значений. Повторные `Set-Cookie` не объединяются в одну строку; cookies
+upstream добавляются к уже выставленным предыдущими Filters cookies приложения.
 
 `ProxyRequestMetadata` содержит method, готовый upstream URI и глубокий
 неизменяемый снимок исходных заголовков. Ключи `headers()` — в нижнем регистре;
@@ -224,6 +244,56 @@ customizer. Неверное имя, CR/LF или другие недопуст�
 жизненный цикл обмена это расширение не меняет.
 `AssertionError` и `LinkageError` прикладного hook также дают локальный `500`.
 
+## Request plan, завершение и преобразование ответа
+
+`ProxyRequestPlan.builder(target)` задаёт полный raw URI, включая query. Target
+проходит проверку engine: HTTP(S), host, допустимый port, без user info/fragment.
+`.timeout(Duration)` переопределяет общий deadline для одного обмена; значение
+должно быть не меньше 1 мс и помещаться в наносекундный `long`.
+`.customizer(...)` добавляет расширение только этого запроса. В planner можно
+снять backend/user/request-id context и захватить immutable значения в hook;
+к Servlet, session и thread-local context из hook обращаться не следует.
+
+`ProxyExchangeExecutor.forward(request, response, suppliedAsync, plan)` возвращает
+`ProxyCall`. При `suppliedAsync == null` engine сам вызывает
+`startAsync(request, response)`. Для текущего `HttpProxy` можно передать уже
+начатый async, но он должен быть создан через `startAsync(request, response)`
+для той же пары wrappers. Чужой supplied context отклоняется без его завершения.
+После передачи запроса engine нельзя продолжать Filter chain или повторять его
+через другой транспорт.
+
+`ProxyCall.completion()` сообщает status, failure, uploadedBytes, downloadedBytes,
+elapsed и `success()`. Это результат передачи, а не классификация HTTP-статуса:
+успешно переданный upstream `404` не является transport failure. UploadedBytes —
+байты, прочитанные из Servlet, без гарантии доставки backend; downloadedBytes учитывает успешно завершённые downstream writes.
+После commit status сохраняет отправленный HTTP-код, даже при failure. Completion
+происходит после cleanup; callback не должен обращаться к Servlet, который
+контейнер уже мог переработать. `cancel(cause)` отменяет только этот обмен.
+Дорогие обработчики результата выполняйте через `whenCompleteAsync` на своём
+ограниченном executor, передавая только подготовленные данные.
+
+`.responseBody(policy)` включает opt-in buffered rewrite для выбранных полных
+ответов с телом без compression/range semantics и `Cache-Control: no-transform`
+в запросе или ответе. Policy может выбирать в том числе `201` и `404`.
+Возврат `null` оставляет streaming. Перед преобразованием engine накапливает bounded direct
+segments с `maxInputBytes` и не более 65 536 компонентов; output ограничен
+`maxOutputBytes`; число output segments также ограничено 65 536 до создания views.
+Rewriter выполняется на 2 worker threads с очередью `max-concurrent` задач
+(по умолчанию 128) и возвращает `ProxyResponseBody` из read-only `ByteBuffer` segments. Неизменённые
+участки разрешено заимствовать из input; engine удерживает их до окончания
+worker и записей. Новые вставки не должны требовать собственного pooled cleanup.
+Без policy обычный streaming путь не собирает тело целиком и не занимает worker.
+
+Это точка переноса алгоритмов `ByteSplice`/`ByteRewriteChain`; текущие Netty
+переписчики и бизнес-правила HTML/CSS автоматически не перенесены. Bounded
+prefix-пример, точный mapping legacy API и правила lifecycle приведены
+в [MIGRATION.md](MIGRATION.md).
+
+До commit engine возвращает `502` при ошибке upstream, `504` по deadline и `503`
+при заполнении admission/worker queue, остановке либо cancellation. Ошибка
+прикладного hook даёт `500`. Legacy fallback `500`/`408` с текстом ошибки не
+переносится автоматически. После commit повреждённый ответ обрывается.
+
 ## Границы примера
 
 `CONNECT` и `Upgrade` не поддерживаются (`501`); любой входящий `Expect`
@@ -252,9 +322,9 @@ Admission и upstream в таком случае удерживаются до �
 Неблокирующий I/O и использование `ByteBuffer` сами по себе не означают полного
 отсутствия копий. Это пример streaming-интеграции, без обещания zero-copy.
 Счётчик `activeRequests()` отражает незавершённые обмены примера; он не является
-контрактом ожидания физического закрытия TCP/TLS-канала из основного `ProxyCall`.
+контрактом ожидания физического закрытия TCP/TLS-канала.
 
 Аутентификации и авторизации сейчас нет. При будущем добавлении Spring Security
-проверки доступа должны выполняться всей применимой цепочкой **до** Servlet.
+проверки доступа должны выполняться всей применимой цепочкой **до** proxy Filter.
 Потребуется отдельно проверить wrappers, async lifecycle и фильтры, читающие тело;
 в этом модуле такие механизмы не настраиваются.

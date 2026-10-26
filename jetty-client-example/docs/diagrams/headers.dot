@@ -9,7 +9,7 @@ digraph Headers {
   initial [label="sanitize()\nубрать служебные"];
   editor [label="ProxyHeaderEditor\nотдельная копия", fillcolor="#E0F2EF", color="#2D827B"];
   metadata [label="ProxyRequestMetadata\nнеизменяемый снимок", style="rounded,dashed,filled"];
-  hooks [label="@Order → hooks\nfreeze() + close()", fillcolor="#E0F2EF", color="#2D827B"];
+  hooks [label="global @Order → plan\nfreeze() + close()", fillcolor="#E0F2EF", color="#2D827B"];
   final [label="sanitize()\nConnection-поля"];
   apply [label="Request.headers()\nили applyResponse()"];
 

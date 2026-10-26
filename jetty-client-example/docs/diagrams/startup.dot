@@ -7,8 +7,8 @@ digraph Startup {
 
   main [label="main()\nSpringApplication.run()\nbinding свойств"];
   client [label="jettyHttpClient()\nclient.start()\nwhitelist обработчиков", fillcolor="#E0F2EF", color="#2D827B"];
-  servlet [label="jettyProxyServlet()\norderedStream()\nсписок customizers"];
-  registration [label="jettyProxyServletRegistration()\n/proxy и /proxy/*\nasyncSupported = true", fillcolor="#E0F2EF", color="#2D827B"];
+  servlet [label="jettyProxyEngine()\nordered customizers\nadmission / workers"];
+  registration [label="Filter registration /*\nplanner: bean / default\nREQUEST + async", fillcolor="#E0F2EF", color="#2D827B"];
 
   { rank=same; main; servlet; }
   { rank=same; client; registration; }
