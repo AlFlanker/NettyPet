@@ -74,8 +74,8 @@ class JettyProxyRewriteIntegrationTest {
         upstream = new RawUpstream();
         application = new SpringApplicationBuilder(JettyClientExampleApplication.class, AdapterBeans.class)
                 .run("--server.port=0", "--spring.main.banner-mode=off",
-                        "--example.proxy.max-concurrent=1", "--example.proxy.exchange-timeout=1500ms",
-                        "--example.proxy.idle-timeout=10s");
+                        "--jetty.proxy.max-concurrent=1", "--jetty.proxy.exchange-timeout=1500ms",
+                        "--jetty.proxy.idle-timeout=10s");
         Object webServer = application.getClass().getMethod("getWebServer").invoke(application);
         port = (int)webServer.getClass().getMethod("getPort").invoke(webServer);
         engine = application.getBean(JettyProxyEngine.class);

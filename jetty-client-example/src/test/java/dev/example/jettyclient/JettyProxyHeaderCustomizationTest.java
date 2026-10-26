@@ -74,8 +74,8 @@ class JettyProxyHeaderCustomizationTest {
         upstream.start();
         application = new SpringApplicationBuilder(JettyClientExampleApplication.class, HeaderBeans.class)
                 .run("--server.port=0", "--spring.main.banner-mode=off",
-                        "--example.proxy.upstream=http://127.0.0.1:" + upstream.getAddress().getPort(),
-                        "--example.proxy.max-concurrent=1", "--example.proxy.exchange-timeout=5s");
+                        "--jetty.proxy.upstream=http://127.0.0.1:" + upstream.getAddress().getPort(),
+                        "--jetty.proxy.max-concurrent=1", "--jetty.proxy.exchange-timeout=5s");
         Object webServer = application.getClass().getMethod("getWebServer").invoke(application);
         port = (int) webServer.getClass().getMethod("getPort").invoke(webServer);
         servlet = application.getBean(JettyProxyServlet.class);

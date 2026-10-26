@@ -12,7 +12,7 @@ server:
   compression:
     enabled: false
 
-example:
+jetty:
   proxy:
     # Фиксированное назначение; необязательный base path добавляется перед путём запроса.
     upstream: ${PROXY_UPSTREAM:http://127.0.0.1:9000}

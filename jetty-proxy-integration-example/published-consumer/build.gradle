@@ -1,0 +1,66 @@
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+
+plugins { id 'application' }
+
+java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+
+def pomOnly = providers.gradleProperty('publishedPomOnly').map { it.toBoolean() }.getOrElse(false)
+def repositoryRoot = providers.gradleProperty('publicationRoot')
+        .map { file(it) }.getOrElse(file('../..'))
+
+repositories {
+    maven {
+        url = uri(new File(repositoryRoot, 'jetty-proxy/build/repository'))
+        content { includeGroup 'dev.example' }
+        if (pomOnly) {
+            metadataSources {
+                mavenPom()
+                artifact()
+                ignoreGradleMetadataRedirection()
+            }
+        }
+    }
+    maven {
+        url = uri(new File(repositoryRoot, 'jetty-proxy-spring/build/repository'))
+        content { includeGroup 'dev.example' }
+        if (pomOnly) {
+            metadataSources {
+                mavenPom()
+                artifact()
+                ignoreGradleMetadataRedirection()
+            }
+        }
+    }
+    mavenCentral { content { excludeGroup 'dev.example' } }
+}
+
+dependencies {
+    implementation 'dev.example:jetty-proxy:1.0.0'
+    implementation 'dev.example:jetty-proxy-spring:1.0.0'
+    // A Servlet host provides this API; the independent non-web consumer makes it explicit.
+    implementation 'jakarta.servlet:jakarta.servlet-api:6.1.0'
+}
+
+application { mainClass = 'dev.example.publishedconsumer.PublishedConsumerCheck' }
+
+tasks.register('verifyPublishedDependencyShape') {
+    inputs.files(configurations.runtimeClasspath)
+    doLast {
+        def artifacts = configurations.runtimeClasspath.resolvedConfiguration.resolvedArtifacts
+        ['jetty-proxy', 'jetty-proxy-spring'].each { name ->
+            def found = artifacts.find { it.moduleVersion.id.group == 'dev.example' && it.name == name }
+            if (found == null || !(found.id.componentIdentifier instanceof ModuleComponentIdentifier))
+                throw new GradleException("${name} was not resolved as an independent Maven module")
+            if (!found.file.name.endsWith('.jar'))
+                throw new GradleException("${name} is not an ordinary JAR dependency")
+        }
+        if (artifacts.any { it.name == 'jetty-client-example' || it.name.startsWith('spring-boot-starter-') })
+            throw new GradleException('Library consumption unexpectedly pulls a demo or application starter')
+        println "Published dependency shape verified (${pomOnly ? 'Maven POM only' : 'Gradle module metadata'})"
+    }
+}
+
+tasks.named('run') {
+    dependsOn tasks.named('verifyPublishedDependencyShape')
+    systemProperty 'published.consumer.pomOnly', pomOnly.toString()
+}

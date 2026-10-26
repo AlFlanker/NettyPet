@@ -3,12 +3,13 @@ plugins {
 }
 
 dependencies {
+    implementation project(':jetty-proxy')
+    implementation project(':jetty-proxy-spring')
     implementation platform('org.springframework.boot:spring-boot-dependencies:4.1.1')
     implementation('org.springframework.boot:spring-boot-starter-webmvc') {
         exclude group: 'org.springframework.boot', module: 'spring-boot-starter-tomcat'
     }
     implementation 'org.springframework.boot:spring-boot-starter-jetty'
-    implementation 'org.eclipse.jetty:jetty-client'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 

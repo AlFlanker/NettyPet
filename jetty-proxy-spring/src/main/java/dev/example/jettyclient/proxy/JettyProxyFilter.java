@@ -9,7 +9,7 @@ import java.util.Objects;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Прикладной Filter-адаптер; не владеет lifecycle общего транспорта.
+ * Прикладной Spring Filter-адаптер; не регистрируется автоматически и не владеет transport lifecycle.
  * Регистрируется с asyncSupported=true. Async/error dispatch не запускает новый обмен.
  */
 public final class JettyProxyFilter extends OncePerRequestFilter {

@@ -1,0 +1,18 @@
+server:
+  address: 127.0.0.1
+  port: 8082
+  max-http-request-header-size: 16KB
+  compression:
+    enabled: false
+
+host:
+  proxy:
+    upstream: ${PROXY_UPSTREAM:http://127.0.0.1:9000/base}
+    timeout: 30s
+    maintenance: false
+
+jetty:
+  proxy:
+    max-concurrent: 128
+    chunk-bytes: 65536
+    exchange-timeout: 30s

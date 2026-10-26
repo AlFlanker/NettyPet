@@ -67,10 +67,10 @@ class JettyProxyIntegrationTest {
         upstream = new RawUpstream();
         application = new SpringApplicationBuilder(JettyClientExampleApplication.class)
                 .run("--server.port=0", "--spring.main.banner-mode=off",
-                        "--example.proxy.upstream=http://127.0.0.1:" + upstream.port() + "/base",
-                        "--example.proxy.max-concurrent=1",
-                        "--example.proxy.exchange-timeout=4s",
-                        "--example.proxy.idle-timeout=10s");
+                        "--jetty.proxy.upstream=http://127.0.0.1:" + upstream.port() + "/base",
+                        "--jetty.proxy.max-concurrent=1",
+                        "--jetty.proxy.exchange-timeout=4s",
+                        "--jetty.proxy.idle-timeout=10s");
         Object webServer = application.getClass().getMethod("getWebServer").invoke(application);
         port = (int) webServer.getClass().getMethod("getPort").invoke(webServer);
         servlet = application.getBean(JettyProxyServlet.class);
@@ -356,9 +356,9 @@ class JettyProxyIntegrationTest {
         try (RawUpstream isolatedUpstream = new RawUpstream();
              ConfigurableApplicationContext isolatedApplication = new SpringApplicationBuilder(JettyClientExampleApplication.class)
                      .run("--server.port=0", "--server.shutdown=immediate", "--spring.main.banner-mode=off",
-                             "--example.proxy.upstream=http://127.0.0.1:" + isolatedUpstream.port() + "/base",
-                             "--example.proxy.max-concurrent=1", "--example.proxy.exchange-timeout=30s",
-                             "--example.proxy.idle-timeout=30s")) {
+                             "--jetty.proxy.upstream=http://127.0.0.1:" + isolatedUpstream.port() + "/base",
+                             "--jetty.proxy.max-concurrent=1", "--jetty.proxy.exchange-timeout=30s",
+                             "--jetty.proxy.idle-timeout=30s")) {
             isolatedUpstream.stallEntered = new CountDownLatch(1);
             isolatedUpstream.stallClosed = new CountDownLatch(1);
             Object webServer = isolatedApplication.getClass().getMethod("getWebServer").invoke(isolatedApplication);

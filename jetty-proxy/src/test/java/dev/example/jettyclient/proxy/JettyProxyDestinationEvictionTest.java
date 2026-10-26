@@ -17,7 +17,7 @@ class JettyProxyDestinationEvictionTest {
         JettyProxyProperties properties = new JettyProxyProperties(URI.create("http://127.0.0.1:9000"),
                 1024, 16_384, 3, 3, 3, 1, Duration.ofSeconds(1), Duration.ofSeconds(30), Duration.ofSeconds(30),
                 Duration.ofMillis(25));
-        HttpClient client = new JettyProxyConfiguration().jettyHttpClient(properties);
+        HttpClient client = JettyProxyClientFactory.createStarted(properties);
         try {
             // Resolve without sending: both destinations have no exchanges or connections.
             client.resolveDestination(client.newRequest("http://127.0.0.1:12345/first"));

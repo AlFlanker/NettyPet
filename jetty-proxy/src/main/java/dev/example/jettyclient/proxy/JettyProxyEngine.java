@@ -23,6 +23,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ForkJoinPool;
@@ -37,6 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 import org.eclipse.jetty.client.AsyncRequestContent;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.Request;
@@ -65,7 +67,7 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
     private final Object admissionGuard = new Object();
     private final ScheduledThreadPoolExecutor timer;
     private final ThreadPoolExecutor rewriteExecutor;
-    private boolean stopped;
+    private volatile boolean stopped;
 
     public JettyProxyEngine(HttpClient client, JettyProxyProperties properties) {
         this(client, properties, List.of());
@@ -78,14 +80,14 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
         this.customizers = List.copyOf(customizers);
         admission = new Semaphore(properties.maxConcurrent());
         timer = new ScheduledThreadPoolExecutor(1, task -> {
-            Thread thread = new Thread(task, "jetty-example-deadlines");
+            Thread thread = new Thread(task, "jetty-proxy-deadlines");
             thread.setDaemon(true);
             return thread;
         });
         timer.setRemoveOnCancelPolicy(true);
         rewriteExecutor = new ThreadPoolExecutor(2, 2, 30, TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(properties.maxConcurrent()), task -> {
-                    Thread thread = new Thread(task, "jetty-example-rewrite");
+                    Thread thread = new Thread(task, "jetty-proxy-rewrite");
                     thread.setDaemon(true);
                     return thread;
                 }, new ThreadPoolExecutor.AbortPolicy());
@@ -231,7 +233,11 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
             stopped = true;
         }
         for (Exchange exchange : exchanges)
-            exchange.dispatch(() -> exchange.fail(503, new IOException("Proxy shutting down")));
+            exchange.dispatch(() -> {
+                IOException failure = new IOException("Proxy shutting down");
+                if (exchange.errorResponsePending) exchange.abortErrorResponse(failure);
+                else exchange.fail(503, failure);
+            });
         timer.shutdownNow();
         // Do not discard queued rewriters: they own borrowed pooled input until
         // the task actually returns, including after an exchange was cancelled.
@@ -295,6 +301,10 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
         private RewriteTask rewriteTask;
         private Iterator<ByteBuffer> rewrittenBuffers;
         private ByteBuffer rewrittenBuffer;
+        private PolicyCompletion policyCompletion;
+        private boolean responseHeadersSeen;
+        private boolean errorResponsePending;
+        private ScheduledFuture<?> errorWriteDeadline;
 
         Exchange(HttpServletRequest incoming, HttpServletResponse outgoing, AsyncContext async,
                 ProxyRequestMetadata metadata, long contentLength, ProxyRequestPlan plan, HttpFields applicationHeaders) {
@@ -347,7 +357,10 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                 while ((action = events.poll()) != null) {
                     synchronized (servletGuard) {
                         try { action.run(); }
-                        catch (Throwable failure) { fail(status(failure), failure); }
+                        catch (Throwable failure) {
+                            fail(status(failure), failure);
+                            throwIfFatal(failure);
+                        }
                         finally { finishCleanup(); }
                     }
                 }
@@ -363,7 +376,21 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                 if (remaining <= 0) { fail(504, new TimeoutException("Exchange deadline")); return; }
                 deadline = timer.schedule(() -> dispatch(() -> fail(504, new TimeoutException("Exchange deadline"))),
                         remaining, TimeUnit.NANOSECONDS);
-                HttpFields.Mutable requestHeaders = HttpFields.build(ProxyHeaders.request(metadata, exchangeCustomizers));
+                if (plan.requestHeadersAsync() == null) startRequest(null);
+                else {
+                    try { awaitHeaders(plan.requestHeadersAsync().apply(metadata), this::startRequest); }
+                    catch (Exception | AssertionError | LinkageError failure) { throw new ProxyHeaders.CustomizationFailure(failure); }
+                }
+            } catch (Throwable failure) {
+                fail(status(failure), failure);
+                throwIfFatal(failure);
+            }
+        }
+
+        private void startRequest(ProxyHeaderPatch patch) {
+            if (terminal || !servletAvailable) return;
+            try {
+                HttpFields.Mutable requestHeaders = HttpFields.build(ProxyHeaders.request(metadata, withPatch(patch)));
                 // An opaque rewriter cannot validate a cached transformed representation
                 // using the origin's representation-specific validators. Keep existence
                 // conditions and write preconditions, and preserve explicit Range passthrough.
@@ -405,6 +432,39 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                 pumpUpload();
             } catch (Throwable failure) {
                 fail(status(failure), failure);
+                throwIfFatal(failure);
+            }
+        }
+
+        private List<ProxyHeaderCustomizer> withPatch(ProxyHeaderPatch patch) {
+            if (patch == null) return exchangeCustomizers;
+            var all = new ArrayList<>(exchangeCustomizers);
+            all.add(new ProxyHeaderCustomizer() {
+                @Override public void customizeRequest(ProxyRequestMetadata request, ProxyHeaderEditor headers) { patch.apply(headers); }
+                @Override public void customizeResponse(ProxyRequestMetadata request, int status, ProxyHeaderEditor headers) { patch.apply(headers); }
+            });
+            return all;
+        }
+
+        private void awaitHeaders(CompletionStage<ProxyHeaderPatch> stage, Consumer<ProxyHeaderPatch> next) {
+            PolicyCompletion completion = new PolicyCompletion((patch, failure) -> dispatch(() -> {
+                policyCompletion = null;
+                if (terminal) return;
+                if (failure != null) {
+                    Throwable cause = failure instanceof CompletionException && failure.getCause() != null
+                            ? failure.getCause() : failure;
+                    throwIfFatal(cause);
+                    fail(500, new ProxyHeaders.CustomizationFailure(cause));
+                } else if (patch == null) fail(500, new ProxyHeaders.CustomizationFailure(
+                        new NullPointerException("header policy patch")));
+                else next.accept(patch);
+            }));
+            policyCompletion = completion;
+            try { java.util.Objects.requireNonNull(stage, "header policy stage").whenComplete(completion); }
+            catch (RuntimeException | Error failure) {
+                completion.detach();
+                policyCompletion = null;
+                throw failure;
             }
         }
 
@@ -490,6 +550,7 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
             responseStatus = status;
             if (status >= 400) terminalFailure = new IOException("Proxy rejected request: " + status);
             if (deadline != null) deadline.cancel(false);
+            detachPolicy();
             reject(outgoing, status);
             try { async.complete(); }
             catch (IllegalStateException ignored) { }
@@ -509,6 +570,21 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
             HttpFields headers = HttpFields.build(response.getHeaders()).asImmutable();
             dispatch(() -> {
                 if (terminal || !servletAvailable) return;
+                if (responseHeadersSeen) throw new IllegalStateException("Multiple final responses");
+                responseHeadersSeen = true;
+                if (!uploadEnded) uploadStopped = true;
+                if (plan.responseHeadersAsync() == null) receiveHeaders(code, headers, null);
+                else {
+                    try {
+                        awaitHeaders(plan.responseHeadersAsync().apply(metadata,
+                                new ProxyResponseMetadata(code, snapshot(headers))), patch -> receiveHeaders(code, headers, patch));
+                    } catch (Exception | AssertionError | LinkageError failure) { throw new ProxyHeaders.CustomizationFailure(failure); }
+                }
+            });
+        }
+
+        private void receiveHeaders(int code, HttpFields headers, ProxyHeaderPatch patch) {
+                if (terminal || !servletAvailable) return;
                 if (code < 200 || code > 599 || code == 101)
                     throw new IllegalStateException("Unsupported upstream status " + code);
                 boolean metadataOnly = metadata.method().equals("HEAD") || code == 304;
@@ -517,7 +593,7 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                 if (code == 205 && headers.getLongField("Content-Length") > 0)
                     throw new IllegalStateException("205 response cannot contain content");
                 if (finalHeaders) throw new IllegalStateException("Multiple final responses");
-                HttpFields responseHeaders = ProxyHeaders.response(metadata, code, headers, exchangeCustomizers);
+                HttpFields responseHeaders = ProxyHeaders.response(metadata, code, headers, withPatch(patch));
                 finalHeaders = true;
                 noBody = metadataOnly || code == 204 || code == 205;
                 responseStatus = code;
@@ -551,7 +627,6 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                     applyResponseHeaders(responseHeaders);
                 }
                 pumpDownload();
-            });
         }
 
         private boolean canRewrite(int code, HttpFields headers) {
@@ -756,7 +831,8 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                     rewriteTask = null;
                     if (terminal) return;
                     if (problem != null) {
-                        fail(problem instanceof ProxyResponseBody.TooManyBuffersException ? 502 : 500, problem);
+                        fail(problem instanceof ProxyBodyLimitException
+                                || problem instanceof ProxyResponseBody.TooManyBuffersException ? 502 : 500, problem);
                         return;
                     }
                     if (transformed.length() > rewriteSelection.maxOutputBytes()
@@ -812,6 +888,7 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
         private void completeSuccessfully() {
             terminal = true;
             if (deadline != null) deadline.cancel(false);
+            detachPolicy();
             try { async.complete(); }
             catch (IllegalStateException ignored) { }
         }
@@ -859,6 +936,7 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
             terminalFailure = failure;
             if (responseStatus == 0) responseStatus = code;
             if (deadline != null) deadline.cancel(false);
+            detachPolicy();
             if (rewriteTask != null) rewriteTask.cancelQueued();
             if (pendingChunk != null) {
                 release(pendingChunk);
@@ -867,27 +945,108 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
             if (responseContent != null) responseContent.fail(failure);
             if (content != null) content.fail(failure);
             if (sent && upstream != null) upstream.abort(failure);
-            if (downstream != null) downstream.cancel(failure);
-            if (!servletAvailable) return;
+            if (!servletAvailable) {
+                if (downstream != null) downstream.cancel(failure);
+                return;
+            }
             try {
                 // Query wrappers inside the failure path: a broken accessor must
                 // still abort downstream rather than strand a timeout=0 async.
                 boolean committed = outgoing.isCommitted();
-                if (committed) {
+                if (committed || writePending) {
+                    if (downstream != null) downstream.cancel(failure);
                     servletAvailable = false;
                     abortDownstream(failure);
                 } else {
-                    responseStatus = code;
+                    ProxyErrorResponse rendered = null;
+                    if (plan.errorPolicy() != null && !stopped && !isFatal(failure)) {
+                        try { rendered = java.util.Objects.requireNonNull(
+                                plan.errorPolicy().render(metadata, code, failure), "error policy response"); }
+                        catch (Exception | AssertionError | LinkageError policyFailure) {
+                            terminalFailure = new ProxyHeaders.CustomizationFailure(policyFailure);
+                            if (policyFailure != failure) terminalFailure.addSuppressed(failure);
+                            code = 500;
+                        }
+                    }
+                    responseStatus = rendered == null ? code : rendered.status();
                     outgoing.reset();
                     ProxyHeaders.applyResponse(applicationHeaders, outgoing);
-                    reject(outgoing, code);
+                    reject(outgoing, responseStatus);
+                    if (rendered != null) {
+                        HttpFields.Mutable headers = HttpFields.build();
+                        rendered.headers().forEach((name, values) -> values.forEach(value -> headers.add(name, value)));
+                        ProxyHeaders.applyResponse(headers, outgoing);
+                        outgoing.setHeader("Cache-Control", "no-store");
+                        ByteBuffer bytes = rendered.bodyBuffer();
+                        outgoing.setContentLength(bytes.remaining());
+                        if (bytes.hasRemaining() && !metadata.method().equals("HEAD")) {
+                            writeErrorResponse(bytes);
+                            return;
+                        }
+                    }
+                    if (downstream != null) downstream.cancel(failure);
                     async.complete();
                 }
-            } catch (Throwable ignored) {
+            } catch (Throwable renderFailure) {
+                if (errorResponsePending) {
+                    errorResponsePending = false;
+                    if (errorWriteDeadline != null) errorWriteDeadline.cancel(false);
+                }
+                if (downstream != null) downstream.cancel(failure);
                 servletAvailable = false;
                 try { abortDownstream(failure); }
                 catch (Throwable suppressed) { }
+                throwIfFatal(renderFailure);
             }
+        }
+
+        private void detachPolicy() {
+            if (policyCompletion != null) {
+                policyCompletion.detach();
+                policyCompletion = null;
+            }
+        }
+
+        private void writeErrorResponse(ByteBuffer bytes) throws IOException {
+            if (downstream == null) downstream = Downstream.create(incoming, outgoing, properties.chunkBytes(),
+                    this::dispatch, this::abortErrorResponse);
+            errorResponsePending = true;
+            // The original exchange deadline has expired/cancelled. A separate
+            // connect-timeout budget bounds draining this small local response.
+            errorWriteDeadline = timer.schedule(() -> dispatch(() -> abortErrorResponse(
+                    new TimeoutException("Local error response write deadline"))),
+                    properties.connectTimeout().toMillis(), TimeUnit.MILLISECONDS);
+            int count = bytes.remaining();
+            writePending = true;
+            Callback callback = once(() -> dispatch(() -> {
+                writePending = false;
+                if (!errorResponsePending) return;
+                downloaded += count;
+                errorResponsePending = false;
+                if (errorWriteDeadline != null) errorWriteDeadline.cancel(false);
+                if (!servletAvailable) return;
+                try { async.complete(); }
+                catch (RuntimeException failure) {
+                    servletAvailable = false;
+                    abortDownstream(failure);
+                }
+            }), failure -> dispatch(() -> {
+                writePending = false;
+                abortErrorResponse(failure);
+            }));
+            try { downstream.write(bytes, callback); }
+            catch (Throwable failure) { callback.failed(failure); throwIfFatal(failure); }
+        }
+
+        private void abortErrorResponse(Throwable failure) {
+            if (!errorResponsePending) return;
+            errorResponsePending = false;
+            if (errorWriteDeadline != null) errorWriteDeadline.cancel(false);
+            if (terminalFailure != null && terminalFailure != failure) terminalFailure.addSuppressed(failure);
+            if (downstream != null) downstream.cancel(failure);
+            servletAvailable = false;
+            try { abortDownstream(failure); }
+            catch (RuntimeException ignored) { }
         }
 
         private void abortDownstream(Throwable failure) {
@@ -907,7 +1066,7 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                     else if (terminalFailure != cleanupFailure) terminalFailure.addSuppressed(cleanupFailure);
                 }
             }
-            if (terminal && upstreamDone && !uploadPending && !writePending && !rewritePending && retainedChunks.get() == 0
+            if (terminal && upstreamDone && !uploadPending && !writePending && !rewritePending && !errorResponsePending && retainedChunks.get() == 0
                     && released.compareAndSet(false, true)) {
                 exchanges.remove(this);
                 admission.release();
@@ -915,6 +1074,17 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
                         Duration.ofNanos(System.nanoTime() - started)));
             }
         }
+    }
+
+    /** A foreign unresolved stage retains this adapter, never a terminal Servlet exchange. */
+    private static final class PolicyCompletion implements BiConsumer<ProxyHeaderPatch, Throwable> {
+        private final AtomicReference<BiConsumer<ProxyHeaderPatch, Throwable>> owner;
+        PolicyCompletion(BiConsumer<ProxyHeaderPatch, Throwable> owner) { this.owner = new AtomicReference<>(owner); }
+        @Override public void accept(ProxyHeaderPatch patch, Throwable failure) {
+            BiConsumer<ProxyHeaderPatch, Throwable> callback = owner.getAndSet(null);
+            if (callback != null) callback.accept(patch, failure);
+        }
+        void detach() { owner.set(null); }
     }
 
     /** Completed public handles retain the outcome, not the Servlet exchange and its buffers. */
@@ -949,6 +1119,15 @@ public final class JettyProxyEngine implements ProxyExchangeExecutor, AutoClosea
         if (failure instanceof TimeoutException) return 504;
         if (failure instanceof RejectedExecutionException) return 503;
         return 502;
+    }
+
+    private static boolean isFatal(Throwable failure) {
+        return failure instanceof VirtualMachineError || failure instanceof ThreadDeath;
+    }
+
+    private static void throwIfFatal(Throwable failure) {
+        if (failure instanceof VirtualMachineError fatal) throw fatal;
+        if (failure instanceof ThreadDeath fatal) throw fatal;
     }
 
     private static Callback once(Runnable success, Consumer<Throwable> failure) {

@@ -67,7 +67,7 @@ class JettyProxyRewriteMetadataTest {
         upstream = new RawUpstream();
         application = new SpringApplicationBuilder(JettyClientExampleApplication.class, MetadataRoutes.class)
                 .run("--server.port=0", "--spring.main.banner-mode=off",
-                        "--example.proxy.exchange-timeout=5s");
+                        "--jetty.proxy.exchange-timeout=5s");
         Object server = application.getClass().getMethod("getWebServer").invoke(application);
         port = (int)server.getClass().getMethod("getPort").invoke(server);
         engine = application.getBean(JettyProxyEngine.class);

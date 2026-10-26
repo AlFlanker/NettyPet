@@ -1,0 +1,35 @@
+plugins { id 'maven-publish' }
+
+// Подключаемая библиотека Servlet async + Jetty HttpClient, без Boot application.
+dependencies {
+    api platform('org.eclipse.jetty:jetty-bom:12.1.12')
+    api 'org.eclipse.jetty:jetty-client'
+    compileOnlyApi 'jakarta.servlet:jakarta.servlet-api:6.1.0'
+    implementation('org.eclipse.jetty.ee11:jetty-ee11-servlet:12.1.12') {
+        // Servlet API предоставляет принимающий контейнер приложения.
+        exclude group: 'jakarta.servlet', module: 'jakarta.servlet-api'
+    }
+
+    testImplementation 'jakarta.servlet:jakarta.servlet-api:6.1.0'
+    testImplementation 'org.awaitility:awaitility:4.3.0'
+}
+
+java { withSourcesJar() }
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            pom {
+                name = 'Jetty Proxy'
+                description = 'Embeddable Servlet async proxy and bounded resource fetch over Jetty HttpClient'
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = 'verification'
+            url = layout.buildDirectory.dir('repository')
+        }
+    }
+}

@@ -50,8 +50,8 @@ class ProxyFilterCookieIntegrationTest {
         upstream.start();
         application = new SpringApplicationBuilder(JettyClientExampleApplication.class, ApplicationCookies.class)
                 .run("--server.port=0", "--spring.main.banner-mode=off",
-                        "--example.proxy.upstream=http://127.0.0.1:" + upstream.getAddress().getPort(),
-                        "--example.proxy.exchange-timeout=5s");
+                        "--jetty.proxy.upstream=http://127.0.0.1:" + upstream.getAddress().getPort(),
+                        "--jetty.proxy.exchange-timeout=5s");
         Object server = application.getClass().getMethod("getWebServer").invoke(application);
         port = (int) server.getClass().getMethod("getPort").invoke(server);
         engine = application.getBean(JettyProxyEngine.class);

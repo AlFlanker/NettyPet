@@ -73,7 +73,7 @@ public final class ProxyHeaderEditor {
         if (Thread.currentThread() != owner) throw new IllegalStateException("Header editor belongs to another thread");
     }
 
-    private static void validateName(String name) {
+    static void validateName(String name) {
         if (name == null || name.isEmpty()) throw new IllegalArgumentException("Header name is empty");
         for (int i = 0; i < name.length(); i++) {
             char ch = name.charAt(i);
@@ -84,7 +84,7 @@ public final class ProxyHeaderEditor {
         }
     }
 
-    private static void validateValue(String value) {
+    static void validateValue(String value) {
         if (value == null) throw new IllegalArgumentException("Header value is null");
         for (int i = 0; i < value.length(); i++) {
             char ch = value.charAt(i);

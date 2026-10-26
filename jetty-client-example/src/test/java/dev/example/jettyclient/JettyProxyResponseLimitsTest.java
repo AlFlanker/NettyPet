@@ -52,9 +52,9 @@ class JettyProxyResponseLimitsTest {
         upstream = new RawUpstream();
         application = new SpringApplicationBuilder(JettyClientExampleApplication.class)
                 .run("--server.port=0", "--spring.main.banner-mode=off",
-                        "--example.proxy.upstream=http://127.0.0.1:" + upstream.port(),
-                        "--example.proxy.max-response-headers-bytes=" + HEADER_LIMIT,
-                        "--example.proxy.max-concurrent=1", "--example.proxy.exchange-timeout=30s");
+                        "--jetty.proxy.upstream=http://127.0.0.1:" + upstream.port(),
+                        "--jetty.proxy.max-response-headers-bytes=" + HEADER_LIMIT,
+                        "--jetty.proxy.max-concurrent=1", "--jetty.proxy.exchange-timeout=30s");
         Object webServer = application.getClass().getMethod("getWebServer").invoke(application);
         port = (int) webServer.getClass().getMethod("getPort").invoke(webServer);
         servlet = application.getBean(JettyProxyServlet.class);

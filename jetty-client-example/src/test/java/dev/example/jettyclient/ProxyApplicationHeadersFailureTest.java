@@ -68,7 +68,7 @@ class ProxyApplicationHeadersFailureTest {
         upstream.start();
         application = new SpringApplicationBuilder(JettyClientExampleApplication.class, ApplicationHeaders.class)
                 .run("--server.port=0", "--spring.main.banner-mode=off",
-                        "--example.proxy.exchange-timeout=500ms", "--example.proxy.idle-timeout=5s");
+                        "--jetty.proxy.exchange-timeout=500ms", "--jetty.proxy.idle-timeout=5s");
         Object server = application.getClass().getMethod("getWebServer").invoke(application);
         port = (int)server.getClass().getMethod("getPort").invoke(server);
         engine = application.getBean(JettyProxyEngine.class);

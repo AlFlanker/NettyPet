@@ -3,26 +3,21 @@ package dev.example.jettyclient.proxy;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Objects;
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.context.properties.bind.ConstructorBinding;
-import org.springframework.boot.context.properties.bind.DefaultValue;
 
-/** Настройки самостоятельного примера; лимиты destination не умножаются на число selectors. */
-@ConfigurationProperties("example.proxy")
+/** Настройки транспорта; лимиты destination не умножаются на число selectors. */
 public record JettyProxyProperties(
-        @DefaultValue("http://127.0.0.1:9000") URI upstream,
-        @DefaultValue("65536") int chunkBytes,
-        @DefaultValue("16384") int maxResponseHeadersBytes,
-        @DefaultValue("128") int maxConcurrent,
-        @DefaultValue("64") int maxConnectionsPerDestination,
-        @DefaultValue("64") int maxQueuedRequestsPerDestination,
-        @DefaultValue("2") int selectors,
-        @DefaultValue("3s") Duration connectTimeout,
-        @DefaultValue("60s") Duration exchangeTimeout,
-        @DefaultValue("30s") Duration idleTimeout,
-        @DefaultValue("60s") Duration destinationIdleTimeout) {
+        URI upstream,
+        int chunkBytes,
+        int maxResponseHeadersBytes,
+        int maxConcurrent,
+        int maxConnectionsPerDestination,
+        int maxQueuedRequestsPerDestination,
+        int selectors,
+        Duration connectTimeout,
+        Duration exchangeTimeout,
+        Duration idleTimeout,
+        Duration destinationIdleTimeout) {
 
-    @ConstructorBinding
     public JettyProxyProperties {
         Objects.requireNonNull(upstream, "upstream");
         String scheme = upstream.getScheme();
@@ -51,6 +46,13 @@ public record JettyProxyProperties(
         }
         positiveMillis(idleTimeout, "idle-timeout");
         positiveMillis(destinationIdleTimeout, "destination-idle-timeout");
+    }
+
+    /** Значения по умолчанию без зависимости от Spring или его binding-механизма. */
+    public static JettyProxyProperties defaults() {
+        return new JettyProxyProperties(URI.create("http://127.0.0.1:9000"), 65536, 16384,
+                128, 64, 64, 2, Duration.ofSeconds(3), Duration.ofSeconds(60),
+                Duration.ofSeconds(30), Duration.ofSeconds(60));
     }
 
     /** Сохраняет прежний API с положительным сроком удаления пустых destinations. */

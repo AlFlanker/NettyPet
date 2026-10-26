@@ -84,8 +84,8 @@ class ProxyPlannerIntegrationTest {
         upstream.start();
         application = new SpringApplicationBuilder(JettyClientExampleApplication.class, ApplicationAdapter.class)
                 .run("--server.port=0", "--server.servlet.context-path=" + CONTEXT,
-                        "--spring.main.banner-mode=off", "--example.proxy.exchange-timeout=5s",
-                        "--example.proxy.upstream=http://127.0.0.1:1/unused-default");
+                        "--spring.main.banner-mode=off", "--jetty.proxy.exchange-timeout=5s",
+                        "--jetty.proxy.upstream=http://127.0.0.1:1/unused-default");
         Object server = application.getClass().getMethod("getWebServer").invoke(application);
         port = (int) server.getClass().getMethod("getPort").invoke(server);
         engine = application.getBean(JettyProxyEngine.class);
