@@ -4,6 +4,21 @@ plugins {
     id 'org.springframework.boot'
 }
 
+// Compile the actual legacy cache sources, not a test copy. The rest of the
+// private portal example is intentionally outside this application's build.
+sourceSets {
+    legacyCacheFixture {
+        java {
+            srcDir rootProject.file('examples')
+            include 'proxy/caching/*.java'
+        }
+    }
+}
+
+configurations {
+    legacyCacheFixtureImplementation.extendsFrom implementation
+}
+
 dependencies {
     implementation platform('org.springframework.boot:spring-boot-dependencies:4.1.1')
     implementation enforcedPlatform('io.netty:netty-bom:4.2.19.Final')
@@ -14,6 +29,9 @@ dependencies {
         exclude group: 'org.springframework.boot', module: 'spring-boot-starter-tomcat'
     }
     implementation 'org.springframework.boot:spring-boot-starter-jetty'
+    legacyCacheFixtureImplementation 'com.google.guava:guava:33.4.8-jre'
+    testImplementation sourceSets.legacyCacheFixture.output
+    testImplementation 'com.google.guava:guava:33.4.8-jre'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 

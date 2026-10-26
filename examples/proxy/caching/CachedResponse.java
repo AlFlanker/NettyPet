@@ -1,6 +1,6 @@
 package com.otr.portal.proxy.caching;
 
-import com.google.common.collect.LinkedListMultimap;
+import com.google.common.collect.MultimapBuilder;
 import com.google.common.collect.Multimap;
 
 import java.util.Date;
@@ -10,7 +10,8 @@ import java.util.Date;
  * @since 23.04.18
  */
 public class CachedResponse {
-    private Multimap<String, String> headers = LinkedListMultimap.create();
+    private final Multimap<String, String> headers = MultimapBuilder
+            .treeKeys(String.CASE_INSENSITIVE_ORDER).arrayListValues().build();
     private byte[] content;
     private int status;
     private Date validThrough;
