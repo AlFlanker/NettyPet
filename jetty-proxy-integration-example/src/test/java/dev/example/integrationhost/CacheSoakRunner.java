@@ -198,9 +198,13 @@ public final class CacheSoakRunner {
                         report.put("afterClose", statsMap(server.stats()));
                     } catch (Throwable failure) { fail("Server cleanup: " + failure.getClass().getName() + ": " + failure.getMessage()); }
                 }
+                if (client != null) {
+                    try { require(client.awaitTermination(Duration.ofSeconds(10)), "HTTP client did not stop"); }
+                    catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); fail("HTTP client cleanup interrupted"); }
+                }
                 httpWorkers.shutdownNow();
                 try {
-                    httpWorkers.awaitTermination(10, TimeUnit.SECONDS);
+                    require(httpWorkers.awaitTermination(10, TimeUnit.SECONDS), "HTTP executor did not stop");
                     require(bodyDeadlines.awaitTermination(5, TimeUnit.SECONDS), "Body deadline executor did not stop");
                 }
                 catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); fail("HTTP executor cleanup interrupted"); }

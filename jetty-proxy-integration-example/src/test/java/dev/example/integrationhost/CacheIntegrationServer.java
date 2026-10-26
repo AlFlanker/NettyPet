@@ -10,6 +10,7 @@ import com.sun.net.httpserver.HttpServer;
 import dev.example.jettyclient.proxy.JettyProxyClientFactory;
 import dev.example.jettyclient.proxy.JettyProxyEngine;
 import dev.example.jettyclient.proxy.JettyProxyProperties;
+import dev.example.jettyclient.proxy.ProxyCall;
 import dev.example.jettyclient.proxy.ProxyRequestPlan;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
@@ -192,10 +193,20 @@ public final class CacheIntegrationServer implements AutoCloseable {
             return;
         }
         ContentCachingResponse capture = new ContentCachingResponse(response, maxEntryBytes, captureBudget);
-        engine.forward(request, capture, plan).completion().whenComplete((result, failure) -> {
-            boolean successful = failure == null && result.failure() == null && result.status() == 200;
-            pendingPublicationCallbacks.incrementAndGet();
+        // The engine releases its active count before invoking completion observers.
+        // Register first so awaitIdle also covers that gap for captures that bypass storage.
+        pendingPublicationCallbacks.incrementAndGet();
+        ProxyCall call;
+        try {
+            call = engine.forward(request, capture, plan);
+        } catch (RuntimeException | Error failure) {
+            try { capture.discardCapture(); }
+            finally { pendingPublicationCallbacks.decrementAndGet(); }
+            throw failure;
+        }
+        call.completion().whenComplete((result, failure) -> {
             try {
+                boolean successful = failure == null && result.failure() == null && result.status() == 200;
                 publications.publish(key, capture, successful).whenComplete((publication, publicationFailure) -> {
                     try {
                         if (publicationFailure != null) publicationFailures.incrementAndGet();
@@ -207,9 +218,11 @@ public final class CacheIntegrationServer implements AutoCloseable {
                     } finally { pendingPublicationCallbacks.decrementAndGet(); }
                 });
             } catch (RuntimeException | Error unexpected) {
-                capture.discardCapture();
-                publicationFailures.incrementAndGet();
-                pendingPublicationCallbacks.decrementAndGet();
+                try { capture.discardCapture(); }
+                finally {
+                    publicationFailures.incrementAndGet();
+                    pendingPublicationCallbacks.decrementAndGet();
+                }
                 throw unexpected;
             }
         });
