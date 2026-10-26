@@ -253,8 +253,10 @@ immutable данные метрик/tracing, используйте быстры
 Servlet readiness/listener и ограничивает накопление: 8 МиБ на запись, общий
 бюджет 128 МиБ с резервом `2 × maxCaptureBytes` для сегментов и финального массива.
 Overflow или нехватка бюджета отключают кэширование, сохраняя streaming.
-`finishCapture(true)` вызывается после успешного `ProxyCall.completion()` на
-ограниченном executor публикации; ошибка/отмена вызывают `discardCapture()`.
+`CachePublicationQueue.publish(...)` вызывается после `ProxyCall.completion()`:
+он выполняет `finishCapture(true)` на ограниченном worker, а при ошибке/отмене,
+переполнении очереди или shutdown освобождает capture. По умолчанию worker один,
+ожидающих задач не больше четырёх; после `close()` новые записи не публикуются.
 Callback не читает уже завершённый Servlet.
 
 Готовые записи ограничены по весу в `SharedResponseCache`; попадания обслуживает

@@ -39,7 +39,7 @@ public final class SharedResponseCache {
         this.clock = Objects.requireNonNull(clock, "clock");
         // Publication has a single worker. One segment gives each entry access to the
         // configured total weight instead of Guava splitting it into smaller per-segment quotas.
-        entries = CacheBuilder.newBuilder().concurrencyLevel(1).maximumWeight(maxWeight)
+        entries = CacheBuilder.newBuilder().concurrencyLevel(1).maximumWeight(maxWeight).recordStats()
                 .weigher((String key, CachedResponse value) -> weight(key, value)).build();
     }
 
@@ -81,7 +81,7 @@ public final class SharedResponseCache {
      * Metadata is frozen. Ownership of the completed body array is transferred: neither
      * the caller nor cache readers may mutate its contents. No additional body copy occurs.
      */
-    public boolean put(String key, CachedResponse value) {
+    public synchronized boolean put(String key, CachedResponse value) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(value, "value");
         if (value.getStatus() != 200 || value.getContent() == null || value.getContent().length > maxEntryBytes
@@ -104,7 +104,17 @@ public final class SharedResponseCache {
 
     public long size() { return entries.size(); }
 
-    public long estimatedWeight() {
+    /** Entries removed by capacity eviction, distinct from explicit invalidation. */
+    public long evictionCount() { return entries.stats().evictionCount(); }
+
+    /** Releases stored references; active writers retain their borrowed bodies until completion. */
+    public void clear() {
+        entries.invalidateAll();
+        entries.cleanUp();
+    }
+
+    /** Serialize with publication so a snapshot cannot count both replaced and replacing entries. */
+    public synchronized long estimatedWeight() {
         return entries.asMap().entrySet().stream().mapToLong(entry -> weight(entry.getKey(), entry.getValue())).sum();
     }
 

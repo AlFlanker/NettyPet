@@ -40,10 +40,10 @@ HTTP 200 и согласованного `Content-Length`, если он был 
 
 ## Подключение к новой ветке
 
-Создавайте общий бюджет, store и ограниченный executor один раз на приложение.
-Окончательное копирование до 8 МиБ выполняется на executor публикации. Использовать
-неограниченный executor или молча отбрасывающую задачи rejection policy нельзя:
-неисполненная задача удержит резерв накопления.
+Создавайте общий бюджет, store и `CachePublicationQueue` один раз на приложение.
+Окончательное копирование до 8 МиБ выполняется на её worker, вне transport callback.
+По умолчанию у очереди один worker и четыре ожидающих задачи. Переполнение и
+остановка освобождают capture автоматически, не меняя уже переданный HTTP-ответ.
 
 Ниже фрагменты обработчика miss. `plan` и backend уже проверены приложением;
 `applicationAllowsSharedCache` обозначает его решение о публичности маршрута.
@@ -51,8 +51,7 @@ HTTP 200 и согласованного `Content-Length`, если он был 
 ```java
 final var budget = new ContentCachingResponse.CaptureBudget(128L * 1024 * 1024);
 final var cache = new SharedResponseCache();
-final var publications = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
-        new ArrayBlockingQueue<>(4), new ThreadPoolExecutor.AbortPolicy());
+final var publications = new CachePublicationQueue(cache, 1, 4);
 ```
 
 В методе обработчика, возвращающем `ProxyCall`:
@@ -67,53 +66,36 @@ String key = SharedResponseCache.key(backendName,
 var capture = new ContentCachingResponse(response, 8 * 1024 * 1024, budget);
 ProxyCall call = engine.forward(request, capture, plan);
 call.completion().whenComplete((result, failure) -> {
-    if (failure != null || result.failure() != null || result.status() != 200) {
-        capture.discardCapture();
-        return;
-    }
-    try {
-        publications.execute(new Publication(key, capture, cache));
-    } catch (RejectedExecutionException fullOrStopped) {
-        capture.discardCapture();
-    }
+    publications.publish(key, capture,
+            failure == null && result.failure() == null && result.status() == 200)
+            .whenComplete((outcome, publicationFailure) -> {
+                // Быстрые метрики/логирование; никаких обращений к Servlet.
+            });
 });
 return call;
 ```
 
-Задача публикации содержит только сохранённые данные:
+Очередь возвращает `STORED`, `BYPASSED`, `REJECTED` либо `CLOSED`; исключение
+snapshot/store завершает stage exceptionally после cleanup. `pendingTasks()`,
+`activeTasks()` и `queuedTasks()` позволяют наблюдать за публикацией.
 
-```java
-record Publication(String key, ContentCachingResponse capture,
-                   SharedResponseCache cache) implements Runnable {
-    @Override public void run() {
-        try {
-            capture.finishCapture(true).ifPresent(value -> cache.put(key, value));
-        } finally {
-            capture.discardCapture();
-        }
-    }
-    void discard() { capture.discardCapture(); }
-}
-```
-
-Callback завершения и `Publication` читают только подготовленный ключ и локальное
+Callback завершения и задача очереди читают только подготовленный ключ и локальное
 состояние capture. Они не читают Servlet request/response, не записывают fallback
 и не завершают `AsyncContext`: этим уже владеет engine. При отмене приложение
 вызывает `call.cancel(cause)`; `discardCapture()` можно вызвать сразу, не ожидая
 transport cleanup.
 
-При shutdown сначала прекратите новые запросы и закройте engine. Если задачи
-публикации отменяются, освободите каждую снятую с очереди capture:
+При shutdown сначала прекратите новые запросы и закройте engine, затем очередь:
 
 ```java
-for (Runnable pending : publications.shutdownNow()) {
-    if (pending instanceof Publication publication) publication.discard();
-}
+publications.close();
+publications.awaitTermination(Duration.ofSeconds(5));
 ```
 
-Уже начавшаяся задача выполняет свой `finally`; при необходимости приложение
-ожидает её завершения ограниченное время. Готовую запись и массив тела после
-публикации изменять нельзя.
+`close()` не ждёт произвольный код snapshot: ожидающие задачи освобождаются сразу,
+начавшаяся задача выполняет свой `finally`, а после закрытия новые записи в store
+не публикуются. `awaitTermination()` нужен только для ограниченного ожидания при
+остановке приложения. Готовую запись и массив тела после публикации изменять нельзя.
 
 ## Готовые записи и попадание в кэш
 

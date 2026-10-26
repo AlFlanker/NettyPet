@@ -24,9 +24,13 @@ class SharedResponseCacheTest {
         assertTrue(cache.estimatedWeight() <= 2048);
         assertTrue(cache.size() > 0 && cache.size() <= 3);
         assertNull(cache.get("entry-0"));
+        assertTrue(cache.evictionCount() > 0);
         for (int i = 0; i < 100; i++) cache.put("empty-" + i, response(0, "max-age=60"));
         assertTrue(cache.estimatedWeight() <= 2048);
         assertTrue(cache.size() < 20, "zero-byte responses must still consume metadata weight");
+        cache.clear();
+        assertEquals(0, cache.size());
+        assertEquals(0, cache.estimatedWeight());
     }
 
     @Test void ExpiredEntriesAreNotServedAndAreRemovedWithoutHousekeepingDelay() {

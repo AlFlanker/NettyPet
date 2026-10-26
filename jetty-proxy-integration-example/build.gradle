@@ -65,3 +65,25 @@ tasks.register('verifyLibraryArtifacts') {
 
 tasks.named('check') { dependsOn tasks.named('verifyLibraryArtifacts') }
 tasks.named('bootJar') { dependsOn tasks.named('verifyLibraryArtifacts') }
+
+// Opt-in sustained validation; normal build/test does not run a ten-minute load test.
+tasks.register('cacheSoak', JavaExec) {
+    group = 'verification'
+    description = 'Exercise the real HTTP cache path with eviction, slow clients and heap/GC sampling'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'dev.example.integrationhost.CacheSoakRunner'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+    minHeapSize = '256m'
+    maxHeapSize = '768m'
+    jvmArgs '-XX:+UseG1GC'
+    if (providers.gradleProperty('cacheSoakFailureHeap').isPresent()) {
+        systemProperty 'cacheSoak.dumpHeapOnFailure', providers.gradleProperty('cacheSoakFailureHeap').get()
+    }
+    args providers.gradleProperty('cacheSoakWarmupSeconds').getOrElse('30'),
+            providers.gradleProperty('cacheSoakSeconds').getOrElse('600'),
+            providers.gradleProperty('cacheSoakClients').getOrElse('20'),
+            providers.gradleProperty('cacheSoakOutput').getOrElse(
+                    layout.buildDirectory.dir('reports/cache-soak').get().asFile.absolutePath),
+            providers.gradleProperty('cacheSoakCommit').getOrElse('working-tree')
+}

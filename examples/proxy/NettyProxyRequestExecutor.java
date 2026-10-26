@@ -6,6 +6,7 @@ import com.otr.portal.hosts.filter.BackendForRequestFilter;
 import com.otr.portal.metadata.reloadable.ConfigurationService;
 import com.otr.portal.metadata.reloadable.ReloadableConfiguration;
 import com.otr.portal.proxy.caching.CachedResponse;
+import com.otr.portal.proxy.caching.CachePublicationQueue;
 import com.otr.portal.proxy.caching.ContentCachingResponse;
 import com.otr.portal.proxy.caching.CachedResponseWriter;
 import com.otr.portal.proxy.caching.SharedResponseCache;
@@ -25,10 +26,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 /**
  * @author pobedenniy.alexey
@@ -40,9 +37,7 @@ public class NettyProxyRequestExecutor implements ProxyRequestExecutor {
     private final SharedResponseCache responseCache = new SharedResponseCache();
     // Snapshot construction can copy up to 8 MiB; keep it off transport/callback threads.
     // Pending jobs retain capture reservations until published or discarded.
-    private final ThreadPoolExecutor cachePublisher = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
-            new ArrayBlockingQueue<>(4), Thread.ofPlatform().name("ProxyCachePublication-", 0).daemon(true).factory(),
-            new ThreadPoolExecutor.AbortPolicy());
+    private final CachePublicationQueue cachePublisher = new CachePublicationQueue(responseCache);
 
     private final ProxyCommandFactory proxyCommandFactory;
     private final DefaultHeaderProcessor defaultHeaderProcessor;
@@ -113,11 +108,7 @@ public class NettyProxyRequestExecutor implements ProxyRequestExecutor {
     public void requestCacheHouseKeeping() { responseCache.cleanUp(); }
 
     @PreDestroy
-    public void closeCachePublisher() {
-        for (Runnable queued : cachePublisher.shutdownNow()) {
-            if (queued instanceof CapturePublication publication) publication.capture.discardCapture();
-        }
-    }
+    public void closeCachePublisher() { cachePublisher.close(); }
 
     private boolean isUriForbidden(String uri, Backend backend) {
         final String requestURI = StringUtils.removeStart(uri, '/' + backend.getUri());
@@ -172,38 +163,8 @@ public class NettyProxyRequestExecutor implements ProxyRequestExecutor {
     }
 
     private void publish(String cacheKey, ContentCachingResponse capture, boolean successful) {
-        if (!successful) {
-            capture.discardCapture();
-            return;
-        }
-        try {
-            cachePublisher.execute(new CapturePublication(cacheKey, capture));
-        } catch (RejectedExecutionException overloadedOrStopped) {
-            // A full cache-publication queue only disables caching; the HTTP response is already complete.
-            capture.discardCapture();
-        }
-    }
-
-    private final class CapturePublication implements Runnable {
-        private final String key;
-        private final ContentCachingResponse capture;
-
-        private CapturePublication(String key, ContentCachingResponse capture) {
-            this.key = key;
-            this.capture = capture;
-        }
-
-        @Override public void run() {
-            try {
-                if (cachePublisher.isShutdown()) return;
-                capture.finishCapture(true).ifPresent(response -> {
-                    if (!cachePublisher.isShutdown()) responseCache.put(key, response);
-                });
-            } catch (RuntimeException failure) {
-                log.warn("Не удалось сохранить ответ в кэше для ключа {}", key, failure);
-            } finally {
-                capture.discardCapture();
-            }
-        }
+        cachePublisher.publish(cacheKey, capture, successful).whenComplete((result, failure) -> {
+            if (failure != null) log.warn("Не удалось сохранить ответ в кэше для ключа {}", cacheKey, failure);
+        });
     }
 }
