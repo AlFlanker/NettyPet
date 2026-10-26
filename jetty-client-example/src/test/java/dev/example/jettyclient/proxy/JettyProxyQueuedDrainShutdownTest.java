@@ -42,6 +42,7 @@ class JettyProxyQueuedDrainShutdownTest {
         HttpServletResponse response = mock(HttpServletResponse.class);
         AsyncContext async = mock(AsyncContext.class);
         when(request.getMethod()).thenReturn("GET");
+        when(request.isAsyncSupported()).thenReturn(true);
         when(request.getRequestURI()).thenReturn("/proxy/stalled-before-start");
         when(request.getContextPath()).thenReturn("");
         when(request.getHeaderNames()).thenReturn(Collections.emptyEnumeration());

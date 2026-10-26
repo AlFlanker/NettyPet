@@ -82,7 +82,10 @@ final class ProxyHeaders {
         Set<String> seen = new HashSet<>();
         for (HttpField field : source) {
             String lower = field.getName().toLowerCase(Locale.ROOT);
-            if (seen.add(lower)) target.setHeader(field.getName(), field.getValue());
+            // A preceding Filter may already have issued an application/session cookie.
+            // Set-Cookie fields are independent and must never replace or join each other.
+            if (lower.equals("set-cookie")) target.addHeader(field.getName(), field.getValue());
+            else if (seen.add(lower)) target.setHeader(field.getName(), field.getValue());
             else target.addHeader(field.getName(), field.getValue());
         }
     }

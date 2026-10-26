@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Отдельное приложение: Servlet принимает запросы, Jetty HttpClient обращается к upstream. */
+/** Отдельное приложение: Filter выбирает запросы, Jetty HttpClient обращается к upstream. */
 @SpringBootApplication
 public class JettyClientExampleApplication {
     public static void main(String[] args) {

@@ -74,6 +74,7 @@ class JettyProxyEarlyResponseAfterUploadEofTest {
         HttpServletResponse outgoing = mock(HttpServletResponse.class);
         AsyncContext async = mock(AsyncContext.class);
         when(incoming.getMethod()).thenReturn("POST");
+        when(incoming.isAsyncSupported()).thenReturn(true);
         when(incoming.getRequestURI()).thenReturn("/proxy/early-after-eof");
         when(incoming.getContextPath()).thenReturn("");
         when(incoming.getHeader("Transfer-Encoding")).thenReturn("chunked");
